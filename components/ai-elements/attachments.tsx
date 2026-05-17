@@ -25,8 +25,8 @@ import { createContext, useCallback, useContext, useMemo } from "react";
 // ============================================================================
 
 export type AttachmentData =
-  | (FileUIPart & { id: string })
-  | (SourceDocumentUIPart & { id: string });
+  | (FileUIPart & { id: string; uploading?: boolean })
+  | (SourceDocumentUIPart & { id: string; uploading?: boolean });
 
 export type AttachmentMediaCategory =
   | "image"
@@ -247,16 +247,30 @@ export const AttachmentPreview = ({
   );
 
   const renderContent = () => {
+    const isUploading = 'uploading' in data && data.uploading;
+
+    let content: ReactNode;
     if (mediaCategory === "image" && data.type === "file" && data.url) {
-      return renderAttachmentImage(data.url, data.filename, variant === "grid");
+      content = renderAttachmentImage(data.url, data.filename, variant === "grid");
+    } else if (mediaCategory === "video" && data.type === "file" && data.url) {
+      content = <video className="size-full object-cover" muted src={data.url} />;
+    } else {
+      const Icon = mediaCategoryIcons[mediaCategory];
+      content = fallbackIcon ?? renderIcon(Icon);
     }
 
-    if (mediaCategory === "video" && data.type === "file" && data.url) {
-      return <video className="size-full object-cover" muted src={data.url} />;
+    if (isUploading) {
+      return (
+        <div className="relative size-full flex items-center justify-center">
+          {content}
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <div className="size-4 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+          </div>
+        </div>
+      );
     }
 
-    const Icon = mediaCategoryIcons[mediaCategory];
-    return fallbackIcon ?? renderIcon(Icon);
+    return content;
   };
 
   return (

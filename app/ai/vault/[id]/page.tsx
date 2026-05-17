@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Save, Trash2, Database, FileText, Table2 } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Database, FileText, Table2, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { NoteEditor } from "../_components/note-editor";
 import { SpreadsheetEditor } from "../_components/spreadsheet-editor";
+import { GalleryViewer } from "../_components/gallery-viewer";
 import { PageHeader } from "../../_components/page-header";
 import { useAI } from "../../_components/ai-provider";
 import { Button } from "@/components/ui/button";
@@ -179,7 +180,7 @@ Prioritize actions and responses related to this item.`,
     <div className="flex-1 flex flex-col h-full bg-[#0A0A0A]">
       <PageHeader
         backHref="/ai/vault"
-        icon={item?.type === "note" ? <FileText /> : <Table2 />}
+        icon={item?.type === "note" ? <FileText /> : item?.type === "spreadsheet" ? <Table2 /> : <ImageIcon />}
         title={
           <input
             value={title}
@@ -188,31 +189,7 @@ Prioritize actions and responses related to this item.`,
             placeholder="Enter title..."
           />
         }
-        subtitle={item?.updatedAt ? `Last updated: ${new Date(item.updatedAt).toLocaleDateString()}` : "Untitled Item"}
-        actions={
-          <div className="flex items-center gap-1.5">
-            <Button
-              onClick={() => setShowChat(!showChat)}
-              variant="outline"
-              className={cn(
-                "h-9 px-4 rounded-full transition-all flex items-center gap-2 border-white/10",
-                showChat ? "bg-white/10 text-white border-white/30" : "text-white/40 hover:text-white hover:bg-white/5 border-transparent"
-              )}
-            >
-              <MessageSquare size={16} />
-              <span className="hidden sm:inline">Chat</span>
-            </Button>
-            
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="h-9 px-4 rounded-full bg-white text-black text-sm font-semibold hover:bg-white/90 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-            >
-              <Save size={16} />
-              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save"}</span>
-            </button>
-          </div>
-        }
+        subtitle={"Manage the files here"}
       />
 
       {/* CONTENT AREA & CHAT */}
@@ -230,11 +207,20 @@ Prioritize actions and responses related to this item.`,
                   initialData={data.item.content} 
                   onChange={setContent} 
                 />
-              ) : (
+              ) : data.item.type === "spreadsheet" ? (
                 <SpreadsheetEditor 
                   key={`${id}-${data.item.updatedAt}`}
                   initialData={data.item.content} 
                   onChange={setContent} 
+                />
+              ) : (
+                <GalleryViewer
+                  key={`${id}-${data.item.updatedAt}`}
+                  initialData={data.item.content}
+                  onChange={(newContent) => {
+                    setContent(newContent);
+                    mutate(); // Keep SWR completely in sync
+                  }}
                 />
               )}
             </div>
@@ -242,7 +228,7 @@ Prioritize actions and responses related to this item.`,
         </div>
 
         <AnimatePresence mode="wait">
-          {showChat && (
+          {showChat && item?.type !== "gallery" && (
             <motion.div
               initial={{ x: 400, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}

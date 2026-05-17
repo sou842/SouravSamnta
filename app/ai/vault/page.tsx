@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Database, Menu, Search, Plus, FileText, Table2, Trash2, ChevronDown } from "lucide-react";
+import { Database, Menu, Search, Plus, FileText, Table2, Trash2, ChevronDown, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ export default function VaultPage() {
   const { setMobileSidebarOpen } = useAI();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "note" | "spreadsheet">("all");
+  const [filterType, setFilterType] = useState<"all" | "note" | "spreadsheet" | "gallery">("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<{ id?: string, type: "note" | "spreadsheet" } | null>(null);
@@ -85,7 +85,7 @@ export default function VaultPage() {
               tabIndex={0}
               className="h-9 px-4 rounded-full border border-white/10 bg-white/5 text-xs text-white/60 hover:text-white flex items-center gap-2 transition-all cursor-pointer"
             >
-              {filterType === "all" ? "All Types" : filterType === "note" ? "Notes" : "Spreadsheets"}
+              {filterType === "all" ? "All Types" : filterType === "note" ? "Notes" : filterType === "spreadsheet" ? "Spreadsheets" : "Media Galleries"}
               <ChevronDown size={14} className="opacity-40" />
             </button>
             <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow-2xl bg-[#0F0F0F] border border-white/10 rounded-xl w-48 mt-2">
@@ -111,6 +111,14 @@ export default function VaultPage() {
                   className={cn("text-xs py-2", filterType === "spreadsheet" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5")}
                 >
                   Spreadsheets
+                </button>
+              </li>
+              <li>
+                <button 
+                  onClick={() => setFilterType("gallery")}
+                  className={cn("text-xs py-2", filterType === "gallery" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5")}
+                >
+                  Media Galleries
                 </button>
               </li>
             </ul>
@@ -149,8 +157,10 @@ export default function VaultPage() {
                     <div className="p-2.5 rounded-full bg-white/5">
                       {item.type === 'note' ? (
                         <FileText size={24} className="text-blue-400" />
-                      ) : (
+                      ) : item.type === 'spreadsheet' ? (
                         <Table2 size={24} className="text-green-400" />
+                      ) : (
+                        <ImageIcon size={24} className="text-purple-400" />
                       )}
                     </div>
                     <button

@@ -8,6 +8,8 @@ import { toast } from "sonner";
 
 import { ChatInput, mistralModels } from "@/components/ai/chat-input";
 import { MessageList } from "@/components/ai/message-list";
+import { motion, AnimatePresence } from "motion/react";
+import { GallerySidePanel } from "@/components/ai/gallery-sidepanel";
 import { ChatHeader } from "@/components/ai/chat-header";
 import { EmptyState } from "@/components/ai/empty-state";
 import { getSaveMemoryToolOutputs } from "@/app/ai/_lib/chat-tools";
@@ -59,6 +61,11 @@ function AIPageContent() {
   const lastAutoScrollTsRef = useRef(0);
   const perfSamplesRef = useRef({ streamUpdates: 0, longFrames: 0, lastTokenTs: 0 });
   const [renderMessages, setRenderMessages] = useState<UIMessage[]>([]);
+  
+  // Gallery Side Panel states
+  const [showGallerySidePanel, setShowGallerySidePanel] = useState(false);
+  const [gallerySearchQuery, setGallerySearchQuery] = useState("");
+  const [customFileToAttach, setCustomFileToAttach] = useState<any | null>(null);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -371,51 +378,87 @@ function AIPageContent() {
   };
 
   return (
-    <>
-      <ChatHeader 
-        onOpenMobileSidebar={() => setMobileSidebarOpen(true)} 
-        isSyncing={isSyncing}
-      />
+    <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative w-full h-full">
+      <div className="flex-1 flex flex-col min-w-0 relative h-full">
+        <ChatHeader 
+          onOpenMobileSidebar={() => setMobileSidebarOpen(true)} 
+          isSyncing={isSyncing}
+        />
 
-      <div className="flex-1 overflow-y-auto px-4 py-10 scroll-smooth scrollbar-hide" ref={scrollRef}>
-        <div className="mx-auto w-full max-w-3xl space-y-12 pb-40">
-          {renderMessages.length === 0 ? (
-            <EmptyState
-              input={input}
-              setInput={setInput}
-              sendMessage={sendMessageWithMemory}
-              selectedModel={selectedModel}
-            />
-          ) : (
-            <MessageList
-              messages={renderMessages}
-              isLoading={isLoading}
-              copyToClipboard={copyToClipboard}
-              onSaveMemory={saveMessageToMemory}
-              regenerate={regenerateWithMemory}
-              selectedModel={selectedModel}
-              onEditMessage={onEditMessage}
-              scrollContainerRef={scrollRef}
-              debugPerf={PERF_DEBUG}
-            />
-          )}
+        <div className="flex-1 overflow-y-auto px-4 py-10 scroll-smooth scrollbar-hide" ref={scrollRef}>
+          <div className="mx-auto w-full max-w-3xl space-y-12 pb-40">
+            {renderMessages.length === 0 ? (
+              <EmptyState
+                input={input}
+                setInput={setInput}
+                sendMessage={sendMessageWithMemory}
+                selectedModel={selectedModel}
+              />
+            ) : (
+              <MessageList
+                messages={renderMessages}
+                isLoading={isLoading}
+                copyToClipboard={copyToClipboard}
+                onSaveMemory={saveMessageToMemory}
+                regenerate={regenerateWithMemory}
+                selectedModel={selectedModel}
+                onEditMessage={onEditMessage}
+                scrollContainerRef={scrollRef}
+                debugPerf={PERF_DEBUG}
+              />
+            )}
+          </div>
         </div>
+
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#000000] via-[#000000]/80 to-transparent z-10" />
+        {!!renderMessages.length && (
+          <ChatInput
+            input={input}
+            setInput={setInput}
+            isLoading={isLoading}
+            sendMessage={sendMessageWithMemory}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            selectedModelData={selectedModelData}
+            modelSelectorOpen={modelSelectorOpen}
+            setModelSelectorOpen={setModelSelectorOpen}
+            onShowGallerySidePanel={(show, search) => {
+              setShowGallerySidePanel(show);
+              if (search !== undefined) setGallerySearchQuery(search);
+            }}
+            customFileToAttach={customFileToAttach}
+            onCustomFileAttached={() => setCustomFileToAttach(null)}
+          />
+        )}
       </div>
 
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#000000] via-[#000000]/80 to-transparent z-10" />
-      {!!renderMessages.length &&
-        <ChatInput
-          input={input}
-          setInput={setInput}
-          isLoading={isLoading}
-          sendMessage={sendMessageWithMemory}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          selectedModelData={selectedModelData}
-          modelSelectorOpen={modelSelectorOpen}
-          setModelSelectorOpen={setModelSelectorOpen}
-        />}
-    </>
+      {/* Gallery Assets Sliding Side Panel */}
+      <AnimatePresence mode="wait">
+        {showGallerySidePanel && (
+          <motion.div
+            initial={{ x: 400, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 400, opacity: 0 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="w-[400px] shrink-0 h-full z-40 relative shadow-2xl border-l border-white/5"
+          >
+            <GallerySidePanel
+              searchQuery={gallerySearchQuery}
+              setSearchQuery={setGallerySearchQuery}
+              onClose={() => setShowGallerySidePanel(false)}
+              onSelectFile={(file) => {
+                setCustomFileToAttach({
+                  id: file.id,
+                  filename: file.filename,
+                  url: file.url,
+                  mediaType: file.mediaType,
+                });
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

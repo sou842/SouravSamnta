@@ -156,6 +156,44 @@ export function NoteEditor({ initialData, onChange }: NoteEditorProps) {
               inlineToolbar: true,
               config: {
                 embed: { display: true },
+                uploader: {
+                  async uploadByFile(file: File) {
+                    const formData = new FormData();
+                    formData.append("file", file);
+
+                    try {
+                      const res = await fetch("/api/upload", {
+                        method: "POST",
+                        body: formData,
+                      });
+
+                      if (!res.ok) {
+                        throw new Error("Upload failed");
+                      }
+
+                      const data = await res.json();
+                      return {
+                        success: 1,
+                        file: {
+                          url: data.url,
+                        },
+                      };
+                    } catch (error) {
+                      console.error("EditorJS image upload failed:", error);
+                      return {
+                        success: 0,
+                      };
+                    }
+                  },
+                  async uploadByUrl(url: string) {
+                    return {
+                      success: 1,
+                      file: {
+                        url: url,
+                      },
+                    };
+                  }
+                }
               },
             },
             youtubeEmbed: {

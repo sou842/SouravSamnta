@@ -1,8 +1,9 @@
 "use client";
 
 import React, { memo, useState, useEffect, useRef } from "react";
-import { CheckIcon, Globe, PlusIcon, User, Search, MessageSquare, X, BookOpenCheck } from "lucide-react";
+import { CheckIcon, Globe, PlusIcon, User, Search, MessageSquare, X, BookOpenCheck, Image as ImageIcon, FileText } from "lucide-react";
 import { FileUIPart } from "ai";
+import { toast } from "sonner";
 import { type SendChatMessage } from "@/components/ai/types";
 import {
   Attachment,
@@ -48,12 +49,52 @@ export const mistralModels = [
 export type ModelItemData = (typeof mistralModels)[number];
 
 const AttachmentItem = memo(
-  ({ attachment, onRemove }: { attachment: FileUIPart & { id: string }; onRemove: (id: string) => void }) => (
-    <Attachment data={attachment} onRemove={() => onRemove(attachment.id)}>
-      <AttachmentPreview />
-      <AttachmentRemove />
-    </Attachment>
-  )
+  ({ attachment, onRemove }: { attachment: FileUIPart & { id: string }; onRemove: (id: string) => void }) => {
+    const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+    const handlePreviewClick = (e: React.MouseEvent) => {
+      // Don't open lightbox if the file is still uploading
+      if ('uploading' in attachment && attachment.uploading) return;
+      if (attachment.url) {
+        setIsLightboxOpen(true);
+      }
+    };
+
+    return (
+      <>
+        <Attachment 
+          data={attachment} 
+          onRemove={() => onRemove(attachment.id)}
+          className="!size-16 rounded-xl border border-white/10 shadow-md overflow-hidden bg-white/5 group transition-all hover:scale-105 duration-200 cursor-zoom-in"
+          onClick={handlePreviewClick}
+        >
+          <AttachmentPreview />
+          <AttachmentRemove className="!opacity-100 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white size-5 rounded-full flex items-center justify-center border border-white/10 top-1 right-1 absolute transition-colors p-0 [&>svg]:!size-2.5" />
+        </Attachment>
+
+        {isLightboxOpen && attachment.url && (
+          <div 
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md animate-in fade-in duration-200 cursor-zoom-out"
+            onClick={() => setIsLightboxOpen(false)}
+          >
+            <button 
+              type="button"
+              className="absolute top-6 right-6 size-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-white flex items-center justify-center transition-colors cursor-pointer"
+              onClick={() => setIsLightboxOpen(false)}
+            >
+              <X className="size-5" />
+            </button>
+            <img 
+              src={attachment.url} 
+              alt={attachment.filename || "Preview"} 
+              className="max-w-[90vw] max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/5 animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+      </>
+    );
+  }
 );
 AttachmentItem.displayName = "AttachmentItem";
 
@@ -86,12 +127,24 @@ const PromptInputAttachmentsDisplay = () => {
   const attachments = usePromptInputAttachments();
   if (attachments.files.length === 0) return null;
   return (
-    <Attachments variant="inline" className="border-b border-white/5 bg-white/[0.02] px-6 py-3">
+    <Attachments variant="grid" className="!ml-0 !w-full justify-start flex flex-row flex-wrap gap-3 border-b border-white/5 bg-white/[0.01] px-1.5 py-1.5">
       {attachments.files.map((attachment) => (
         <AttachmentItem attachment={attachment} key={attachment.id} onRemove={attachments.remove} />
       ))}
     </Attachments>
   );
+};
+
+const AttachmentsExposer = ({
+  onAttachmentsReady,
+}: {
+  onAttachmentsReady: (attachments: any) => void;
+}) => {
+  const attachments = usePromptInputAttachments();
+  useEffect(() => {
+    onAttachmentsReady(attachments);
+  }, [attachments, onAttachmentsReady]);
+  return null;
 };
 
 interface ChatInputProps {
@@ -107,6 +160,9 @@ interface ChatInputProps {
   selectedTask?: any | null;
   setSelectedTask?: (task: any | null) => void;
   space?: number;
+  onShowGallerySidePanel?: (show: boolean, search?: string) => void;
+  customFileToAttach?: any;
+  onCustomFileAttached?: () => void;
 }
 
 export function ChatInput({
@@ -121,13 +177,17 @@ export function ChatInput({
   setModelSelectorOpen,
   selectedTask,
   setSelectedTask,
-  space=4
+  space=4,
+  onShowGallerySidePanel,
+  customFileToAttach,
+  onCustomFileAttached
 }: ChatInputProps) {
   const [contacts, setContacts] = useState<any[]>([]);
   const [showContactSelector, setShowContactSelector] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
+  const attachmentsRef = useRef<any>(null);
 
   useEffect(() => {
     const fetchContacts = async () => {
@@ -142,19 +202,52 @@ export function ChatInput({
     fetchContacts();
   }, []);
 
+  useEffect(() => {
+    if (customFileToAttach && attachmentsRef.current) {
+      const newInput = input?.replace(/@g:\w*$/, '');
+      setInput(newInput);
+
+      const alreadyAttached = attachmentsRef.current.files?.some(
+        (f: any) => f.id === customFileToAttach.id
+      );
+
+      if (alreadyAttached) {
+        toast.warning(`file is already attached`);
+      } else {
+        attachmentsRef.current.addCustomFile?.({
+          id: customFileToAttach.id,
+          filename: customFileToAttach.filename,
+          url: customFileToAttach.url,
+          mediaType: customFileToAttach.mediaType,
+        });
+        toast.success(`Attached "${customFileToAttach.filename}" from Gallery`);
+      }
+
+      onCustomFileAttached?.();
+    }
+  }, [customFileToAttach, input, setInput, onCustomFileAttached]);
+
   const handleInputChange = (value: string) => {
     setInput(value);
-    const match = value.match(/@w:(\w*)$/);
-    if (match) {
+    const contactMatch = value.match(/@w:(\w*)$/);
+    const galleryMatch = value.match(/@g:(\w*)$/);
+
+    if (contactMatch) {
       setShowContactSelector(true);
-      setContactSearch(match[1]);
+      setContactSearch(contactMatch[1]);
+      onShowGallerySidePanel?.(false);
+    } else if (galleryMatch) {
+      onShowGallerySidePanel?.(true, galleryMatch[1]);
+      setShowContactSelector(false);
     } else {
       setShowContactSelector(false);
+      if (!value.includes("@g:")) {
+        onShowGallerySidePanel?.(false);
+      }
     }
   };
 
   const selectContact = (contact: any) => {
-    // Remove the @w: trigger from input
     const newInput = input?.replace(/@w:\w*$/, '');
     setInput(newInput);
     setSelectedContact(contact);
@@ -175,7 +268,7 @@ export function ChatInput({
             ref={selectorRef}
             className="absolute bottom-full left-0 mb-4 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-3xl overflow-hidden z-30 animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
-            <div className="p-3 border-b border-white/5 bg-white/[0.02] flex items-center gap-2">
+            <div className="p-3 border-b border-white/5 bg-white/2 flex items-center gap-2">
               <MessageSquare className="size-3.5 text-[#25d366]" />
               <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">WhatsApp Contacts</span>
             </div>
@@ -206,7 +299,7 @@ export function ChatInput({
         )}
 
         <PromptInput
-          className="pointer-events-auto bg-[#131313] rounded-xl border border-white/10 shadow-2xl transition-all duration-300 overflow-hidden"
+          className="pointer-events-auto bg-[#131313] rounded-xl border border-white/10 shadow-2xl transition-all duration-300"
           onSubmit={async (message) => {
             if (!message.text.trim() && message.files.length === 0) return;
             
@@ -223,8 +316,10 @@ export function ChatInput({
               { body: { model: selectedModel } }
             );
             setInput("");
+            onShowGallerySidePanel?.(false);
           }}
         >
+          <AttachmentsExposer onAttachmentsReady={(att) => { attachmentsRef.current = att; }} />
           <PromptInputAttachmentsDisplay />
           
           <PromptInputBody className="w-full flex flex-col items-start !justify-start">

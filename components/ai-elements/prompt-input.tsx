@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
@@ -185,6 +186,7 @@ export interface AttachmentsContext {
   clear: () => void;
   openFileDialog: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  addCustomFile?: (custom: { id?: string; filename: string; url: string; mediaType: string }) => void;
 }
 
 export interface TextInputContext {
@@ -533,8 +535,39 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
+  const [items, setItems] = useState<(FileUIPart & { id: string; uploading?: boolean })[]>([]);
   const files = usingProvider ? controller.attachments.files : items;
+
+  const uploadFileToServer = useCallback(async (file: File, id: string) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const data = await res.json();
+      
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, url: data.url, uploading: false }
+            : item
+        )
+      );
+    } catch (err: any) {
+      console.error("Cloudinary upload failed:", err);
+      toast.error(err.message || "Failed to upload file to Cloudinary");
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    }
+  }, []);
 
   // ----- Local referenced sources (always local to PromptInput)
   const [referencedSources, setReferencedSources] = useState<
@@ -597,6 +630,8 @@ export const PromptInput = ({
         return;
       }
 
+      let toUpload: { file: File; id: string }[] = [];
+
       setItems((prev) => {
         const capacity =
           typeof maxFiles === "number"
@@ -610,20 +645,27 @@ export const PromptInput = ({
             message: "Too many files. Some were not added.",
           });
         }
-        const next: (FileUIPart & { id: string })[] = [];
+        const next: (FileUIPart & { id: string; uploading?: boolean })[] = [];
         for (const file of capped) {
+          const fileId = nanoid();
           next.push({
             filename: file.name,
-            id: nanoid(),
+            id: fileId,
             mediaType: file.type,
             type: "file",
             url: URL.createObjectURL(file),
+            uploading: true,
           });
+          toUpload.push({ file, id: fileId });
         }
         return [...prev, ...next];
       });
+
+      for (const item of toUpload) {
+        uploadFileToServer(item.file, item.id);
+      }
     },
-    [matchesAccept, maxFiles, maxFileSize, onError]
+    [matchesAccept, maxFiles, maxFileSize, onError, uploadFileToServer]
   );
 
   const removeLocal = useCallback(
@@ -819,6 +861,20 @@ export const PromptInput = ({
       files: files.map((item) => ({ ...item, id: item.id })),
       openFileDialog,
       remove,
+      addCustomFile: (custom: { id?: string; filename: string; url: string; mediaType: string }) => {
+        const fileId = custom.id || nanoid();
+        setItems((prev) => [
+          ...prev,
+          {
+            id: fileId,
+            filename: custom.filename,
+            mediaType: custom.mediaType,
+            type: "file",
+            url: custom.url,
+            uploading: false,
+          }
+        ]);
+      }
     }),
     [files, add, remove, clearAttachments, openFileDialog]
   );
@@ -844,6 +900,12 @@ export const PromptInput = ({
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     async (event) => {
       event.preventDefault();
+
+      const isAnyFileUploading = files.some((f) => 'uploading' in f && f.uploading);
+      if (isAnyFileUploading) {
+        toast.warning("Please wait for all uploads to complete before submitting.");
+        return;
+      }
 
       const form = event.currentTarget;
       const text = usingProvider
