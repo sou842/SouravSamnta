@@ -39,7 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn, compressImage } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
@@ -540,8 +540,9 @@ export const PromptInput = ({
 
   const uploadFileToServer = useCallback(async (file: File, id: string) => {
     try {
+      const compressedFile = await compressImage(file);
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", compressedFile);
 
       const res = await fetch("/api/upload", {
         method: "POST",

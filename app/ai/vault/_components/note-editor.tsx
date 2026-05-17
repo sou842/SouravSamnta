@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import EditorJS, { OutputData } from "@editorjs/editorjs";
+import { compressImage } from "@/lib/utils";
 
 interface NoteEditorProps {
   initialData?: any;
@@ -158,10 +159,11 @@ export function NoteEditor({ initialData, onChange }: NoteEditorProps) {
                 embed: { display: true },
                 uploader: {
                   async uploadByFile(file: File) {
-                    const formData = new FormData();
-                    formData.append("file", file);
-
                     try {
+                      const compressedFile = await compressImage(file);
+                      const formData = new FormData();
+                      formData.append("file", compressedFile);
+
                       const res = await fetch("/api/upload", {
                         method: "POST",
                         body: formData,
