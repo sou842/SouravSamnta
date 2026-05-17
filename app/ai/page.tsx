@@ -135,12 +135,13 @@ function AIPageContent() {
     setChats((prev) =>
       prev.map((chat) => {
         if (chat.id === activeChatId) {
-          const isSameLength = chat.messages?.length === nextMessages.length;
+          const hasExistingMessages = Array.isArray(chat.messages);
+          const isSameLength = hasExistingMessages && chat.messages.length === nextMessages.length;
           return {
             ...chat,
             messages: nextMessages,
             title: deriveChatTitle(nextMessages),
-            updatedAt: isSameLength ? chat.updatedAt : Date.now(),
+            updatedAt: (!hasExistingMessages || isSameLength) ? chat.updatedAt : Date.now(),
           };
         }
         return chat;
