@@ -228,7 +228,7 @@ Prioritize actions and responses related to this item.`,
         </div>
 
         <AnimatePresence mode="wait">
-          {showChat && item?.type !== "gallery" && (
+          {showChat && item?.type !== "gallery" && item?.type !== "album" && (
             <motion.div
               initial={{ x: 400, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}

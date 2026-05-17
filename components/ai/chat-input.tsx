@@ -301,7 +301,8 @@ export function ChatInput({
         <PromptInput
           className="pointer-events-auto bg-[#131313] rounded-xl border border-white/10 shadow-2xl transition-all duration-300"
           onSubmit={async (message) => {
-            if (!message.text.trim() && message.files.length === 0) return;
+            const allFiles = attachmentsRef.current?.files || message.files || [];
+            if (!message.text.trim() && allFiles.length === 0) return;
             
             let finalText = message.text;
             if (selectedContact) {
@@ -311,10 +312,17 @@ export function ChatInput({
             await sendMessage(
               {
                 text: finalText,
-                files: message.files,
+                files: [],
               },
-              { body: { model: selectedModel } }
+              {
+                body: {
+                  model: selectedModel,
+                  customAttachments: allFiles,
+                }
+              }
             );
+            
+            attachmentsRef.current?.clear?.();
             setInput("");
             onShowGallerySidePanel?.(false);
           }}

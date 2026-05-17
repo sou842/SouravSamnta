@@ -44,17 +44,41 @@ async function getGoogleAccessToken() {
 }
 
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+// Allow streaming responses up to 40 seconds
+export const maxDuration = 40;
+
+const customFetch = async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  let attempts = 0;
+  const maxAttempts = 5;
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      const response = await fetch(url, init);
+      if (response.status === 429 && attempts < maxAttempts) {
+        const delay = attempts * 1500;
+        console.warn(`Rate limited (429) on ${url}. Retrying attempt ${attempts}/${maxAttempts} after ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      if (attempts >= maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+  return fetch(url, init);
+};
 
 const mistral = createMistral({
   apiKey: process.env.MISTRAL_API_KEY,
   baseURL: process.env.MISTRAL_BASE_URL,
+  fetch: customFetch,
 });
 
 const deepseek = createOpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: 'https://api.deepseek.com',
+  fetch: customFetch,
 });
 
 const chatRequestSchema = z.object({
@@ -68,6 +92,16 @@ const chatRequestSchema = z.object({
   })).optional(),
   messages: z.array(z.custom<UIMessage>()).min(1),
   systemPrompt: z.string().optional(),
+  customAttachments: z.array(z.object({
+    id: z.string().optional(),
+    filename: z.string().optional(),
+    name: z.string().optional(),
+    mediaType: z.string().optional(),
+    contentType: z.string().optional(),
+    type: z.string().optional(),
+    url: z.string().optional(),
+    size: z.any().optional(),
+  })).optional(),
 });
 
 const ALLOWED_MODELS = new Set([
@@ -80,7 +114,7 @@ const ALLOWED_MODELS = new Set([
 const memoryCategorySchema = z.enum(['profile', 'preference', 'project', 'fact', 'instruction']);
 const taskStatusSchema = z.enum(['todo', 'in-progress', 'done', 'backlog']);
 const taskPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
-const vaultItemTypeSchema = z.enum(['spreadsheet', 'note', 'gallery']);
+const vaultItemTypeSchema = z.enum(['spreadsheet', 'note', 'gallery', 'album']);
 const scheduleStatusSchema = z.enum(['active', 'paused', 'completed', 'failed']);
 const scheduleActionTypeSchema = z.enum(['weather_report', 'reminder']);
 const scheduleTypeSchema = z.enum(['one_time', 'recurring']);
@@ -799,11 +833,11 @@ const tools = {
   }),
 
   createVaultItem: tool({
-    description: "Create a new item in the Vault (spreadsheet, note, or media gallery/album). Use type='gallery' to create an album of images or files.",
+    description: "Create a new item in the Vault (spreadsheet, note, gallery, or album). Use type='album' or type='gallery' to create an album of images or files.",
     inputSchema: z.object({
       title: z.string().min(1).max(100).describe('Title of the vault item'),
-      type: vaultItemTypeSchema.describe('Type: spreadsheet, note, or gallery'),
-      content: z.any().describe('Initial content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries (each media object should have: id, filename, url, mediaType, size).'),
+      type: vaultItemTypeSchema.describe('Type: spreadsheet, note, gallery, or album'),
+      content: z.any().describe('Initial content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries/albums (each media object should have: id, filename, url, mediaType, size).'),
       tags: z.array(z.string()).default([]).describe('Optional tags'),
     }),
     execute: async (data) => {
@@ -818,11 +852,11 @@ const tools = {
   }),
 
   updateVaultItem: tool({
-    description: "Update an existing Vault item (spreadsheet, note, or media gallery/album).",
+    description: "Update an existing Vault item (spreadsheet, note, gallery, or album).",
     inputSchema: z.object({
       id: z.string().describe('The MongoDB ID of the Vault item to update'),
       title: z.string().optional().describe('New title'),
-      content: z.any().optional().describe('New content. Completely replaces existing content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries.'),
+      content: z.any().optional().describe('New content. Completely replaces existing content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries/albums.'),
       tags: z.array(z.string()).optional().describe('Updated tags'),
     }),
     execute: async ({ id, ...updateData }) => {
@@ -881,6 +915,27 @@ export async function POST(req: Request) {
       console.warn('MongoDB unavailable, continuing without persistence:', dbConnectError);
     }
 
+    let attachedFilesContext = "";
+    const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user");
+    if (lastUserMessage) {
+      const nativeAttachments = (lastUserMessage as any).experimental_attachments || (lastUserMessage as any).attachments || [];
+      const attachments = [
+        ...nativeAttachments,
+        ...(parsed.data.customAttachments || [])
+      ];
+      if (attachments.length > 0) {
+        attachedFilesContext = `The user has attached the following files to their current request:\n` +
+          attachments.map((att: any, idx: number) => {
+            const filename = att.name || att.filename || `File-${idx}`;
+            const url = att.url || "";
+            const mediaType = att.contentType || att.type || att.mediaType || "image/jpeg";
+            const size = att.size || 0;
+            const id = att.id || `media-${Math.random().toString(36).substr(2, 9)}`;
+            return `- File #${idx + 1}: ID="${id}", Name="${filename}", URL="${url}", Type="${mediaType}", Size=${size}`;
+          }).join("\n") + `\n\nWhen the user asks to "create an album with these images" (or similar), use these files as the content of the new gallery/album vault item. For each item in the content array, you MUST populate id, filename, url, mediaType, and size exactly as provided above.`;
+      }
+    }
+
     const memoryContext = formatMemoriesForPrompt(memories);
     const now = new Date();
     const systemPrompt = [
@@ -896,13 +951,11 @@ export async function POST(req: Request) {
       "6. For Gmail: You can access the user's emails. Use 'gmailListMessages' to see their inbox or search for emails, and 'gmailGetMessage' to read the full content of an email. You can help the user summarize threads, find specific info, or keep track of their correspondence.",
       "7. For WhatsApp: You can send messages via Green API. Use 'whatsappSendMessage' to text the user or others from their personal account. Always verify the phone number format (country code + number, e.g., 919903149299). You can also manage contacts using 'saveContact' and 'listContacts'.",
       "8. For WhatsApp Contact Selection: If you see a tag like '@WhatsApp:Name (Phone)' at the start of a message, it is a RECIPIENT OVERRIDE. You MUST call 'whatsappSendMessage' using that phone number for the user's message. Do not mention or include this tag in your final response to the user.",
-      "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' and content=array of media objects (each having: id, filename, url, mediaType, size).",
+      "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' or type='album' and content=array of media objects (each having: id, filename, url, mediaType, size).",
       memoryContext
-
         ? `Use these saved user memories when relevant. Do not mention them unless it helps the answer.\n${memoryContext}`
         : "",
-
-
+      attachedFilesContext
     ].filter(Boolean).join("\n\n");
 
     const finalSystemPrompt = clientSystemPrompt || systemPrompt;

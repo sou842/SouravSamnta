@@ -36,13 +36,16 @@ interface GalleryViewerProps {
 }
 
 // Utility to format raw bytes into human readable KB/MB
-const formatBytes = (bytes: number, decimals = 1) => {
-  if (bytes === 0) return "0 Bytes";
+const formatBytes = (bytes: any, decimals = 1) => {
+  if (typeof bytes === "string") return bytes;
+  if (!bytes || isNaN(Number(bytes))) return "0 Bytes";
+  const numBytes = Number(bytes);
+  if (numBytes === 0) return "0 Bytes";
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+  const i = Math.floor(Math.log(numBytes) / Math.log(k));
+  return parseFloat((numBytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 };
 
 export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps) {
@@ -53,6 +56,7 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
   const [activeTab, setActiveTab] = useState<"all" | "images" | "documents" | "other">("all");
   const [lightboxFile, setLightboxFile] = useState<MediaFile | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   // Group files into categories
   const categorizedFiles = useMemo(() => {
@@ -61,7 +65,7 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
       const type = file.mediaType?.toLowerCase() || "";
       let category: "images" | "documents" | "other" = "other";
 
-      if (type.startsWith("image/")) {
+      if (type.startsWith("image/") || type === "image" || file.filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i)) {
         category = "images";
       } else if (
         type.startsWith("text/") || 
@@ -70,7 +74,8 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
         type.includes("document") || 
         type.includes("excel") || 
         type.includes("word") || 
-        type.includes("powerpoint")
+        type.includes("powerpoint") ||
+        file.filename.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv)$/i)
       ) {
         category = "documents";
       }
@@ -234,7 +239,9 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {filteredFiles.map((file) => {
               const isImage = file.category === "images";
-              const formattedDate = format(new Date(file.createdAt), "MMM d, yyyy");
+              const parsedDate = file.createdAt ? new Date(file.createdAt) : new Date();
+              const isValidDate = !isNaN(parsedDate.getTime());
+              const formattedDate = format(isValidDate ? parsedDate : new Date(), "MMM d, yyyy");
               const fileSizeStr = formatBytes(file.size);
 
               return (
@@ -245,13 +252,16 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
                   
                   {/* PREVIEW CONTAINER */}
                   <div className="relative aspect-video w-full bg-black/40 overflow-hidden border-b border-white/5 flex items-center justify-center shrink-0">
-                    {isImage ? (
+                    {isImage && !failedImages[file.id] ? (
                       <>
                         <img
                           src={file.url}
                           alt={file.filename}
                           className="size-full object-cover select-none"
                           loading="lazy"
+                          onError={() => {
+                            setFailedImages(prev => ({ ...prev, [file.id]: true }));
+                          }}
                         />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                           <button
@@ -276,26 +286,41 @@ export function GalleryViewer({ initialData = [], onChange }: GalleryViewerProps
                       <>
                         <div className="flex flex-col items-center gap-2.5">
                           <div className="size-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-inner">
-                            {getFileIcon(file.mediaType)}
+                            {isImage ? <ImageIcon className="size-6 text-purple-400/80" /> : getFileIcon(file.mediaType)}
                           </div>
+                          {isImage && <span className="text-[10px] text-white/30">Preview Unavailable</span>}
                         </div>
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => setLightboxFile(file)}
-                            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors shadow-md cursor-pointer"
-                            title="Quick View"
-                          >
-                            <Eye size={15} />
-                          </button>
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors shadow-md flex items-center justify-center"
-                            title="Open in new tab"
-                          >
-                            <ExternalLink size={15} />
-                          </a>
+                          {isImage ? (
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors shadow-md flex items-center justify-center"
+                              title="Open original"
+                            >
+                              <ExternalLink size={15} />
+                            </a>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => setLightboxFile(file)}
+                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors shadow-md cursor-pointer"
+                                title="Quick View"
+                              >
+                                <Eye size={15} />
+                              </button>
+                              <a
+                                href={file.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors shadow-md flex items-center justify-center"
+                                title="Open in new tab"
+                              >
+                                <ExternalLink size={15} />
+                              </a>
+                            </>
+                          )}
                         </div>
                       </>
                     )}

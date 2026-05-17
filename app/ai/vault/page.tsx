@@ -20,10 +20,10 @@ export default function VaultPage() {
   const { setMobileSidebarOpen } = useAI();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "note" | "spreadsheet" | "gallery">("all");
+  const [filterType, setFilterType] = useState<"all" | "note" | "spreadsheet" | "gallery" | "album">("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<{ id?: string, type: "note" | "spreadsheet" } | null>(null);
+  const [selectedItem, setSelectedItem] = useState<{ id?: string, type: "note" | "spreadsheet" | "gallery" | "album" } | null>(null);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -36,7 +36,7 @@ export default function VaultPage() {
 
   const items = data?.items || [];
 
-  const handleCreate = (type: "note" | "spreadsheet") => {
+  const handleCreate = (type: "note" | "spreadsheet" | "gallery" | "album") => {
     setSelectedItem({ type });
     setDialogOpen(true);
   };
@@ -85,7 +85,7 @@ export default function VaultPage() {
               tabIndex={0}
               className="h-9 px-4 rounded-full border border-white/10 bg-white/5 text-xs text-white/60 hover:text-white flex items-center gap-2 transition-all cursor-pointer"
             >
-              {filterType === "all" ? "All Types" : filterType === "note" ? "Notes" : filterType === "spreadsheet" ? "Spreadsheets" : "Media Galleries"}
+              {filterType === "all" ? "All Types" : filterType === "note" ? "Notes" : filterType === "spreadsheet" ? "Spreadsheets" : filterType === "gallery" ? "Media Galleries" : "Albums"}
               <ChevronDown size={14} className="opacity-40" />
             </button>
             <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow-2xl bg-[#0F0F0F] border border-white/10 rounded-xl w-48 mt-2">
@@ -119,6 +119,14 @@ export default function VaultPage() {
                   className={cn("text-xs py-2", filterType === "gallery" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5")}
                 >
                   Media Galleries
+                </button>
+              </li>
+              <li>
+                <button 
+                  onClick={() => setFilterType("album")}
+                  className={cn("text-xs py-2", filterType === "album" ? "bg-white/10 text-white" : "text-white/40 hover:bg-white/5")}
+                >
+                  Albums
                 </button>
               </li>
             </ul>
@@ -160,7 +168,7 @@ export default function VaultPage() {
                       ) : item.type === 'spreadsheet' ? (
                         <Table2 size={24} className="text-green-400" />
                       ) : (
-                        <ImageIcon size={24} className="text-purple-400" />
+                        <ImageIcon size={24} className={item.type === 'album' ? "text-pink-400" : "text-purple-400"} />
                       )}
                     </div>
                     <button
@@ -219,6 +227,12 @@ export default function VaultPage() {
               <button onClick={() => handleCreate("spreadsheet")} className="flex items-center gap-3 py-3 text-sm hover:bg-white/5 transition text-white">
                 <Table2 size={18} className="text-green-400" />
                 New Spreadsheet
+              </button>
+            </li>
+            <li>
+              <button onClick={() => handleCreate("album")} className="flex items-center gap-3 py-3 text-sm hover:bg-white/5 transition text-white">
+                <ImageIcon size={18} className="text-pink-400" />
+                New Album
               </button>
             </li>
           </ul>

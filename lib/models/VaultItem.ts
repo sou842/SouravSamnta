@@ -2,8 +2,8 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IVaultItem extends Document {
   title: string;
-  type: 'spreadsheet' | 'note' | 'gallery';
-  content: any; // Using any/Mixed to accommodate Editor.js blocks, Spreadsheet JSON, or Gallery media arrays
+  type: 'spreadsheet' | 'note' | 'gallery' | 'album';
+  content: any; // Using any/Mixed to accommodate Editor.js blocks, Spreadsheet JSON, or Gallery/Album media arrays
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -18,7 +18,7 @@ const vaultItemSchema = new Schema<IVaultItem>(
     },
     type: {
       type: String,
-      enum: ['spreadsheet', 'note', 'gallery'],
+      enum: ['spreadsheet', 'note', 'gallery', 'album'],
       required: true,
     },
     content: {
