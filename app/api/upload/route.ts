@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { nanoid } from 'nanoid';
@@ -37,8 +38,8 @@ export async function POST(req: Request) {
     const isImage = file.type.startsWith('image/');
     const originalExt = path.extname(file.name) || '.jpg';
     
-    // 1. Create workspace-safe temp directory
-    const tempDir = path.join(process.cwd(), 'temp');
+    // 1. Create OS-provided temp directory (writable on Vercel/serverless)
+    const tempDir = path.join(os.tmpdir(), 'samnta-uploads');
     await fs.mkdir(tempDir, { recursive: true });
 
     // Generate unique names to prevent collision
