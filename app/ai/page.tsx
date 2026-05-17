@@ -1,0 +1,435 @@
+"use client";
+
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import type { UIMessage } from "ai";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+
+import { ChatInput, mistralModels } from "@/components/ai/chat-input";
+import { MessageList } from "@/components/ai/message-list";
+import { ChatHeader } from "@/components/ai/chat-header";
+import { EmptyState } from "@/components/ai/empty-state";
+import { getSaveMemoryToolOutputs } from "@/app/ai/_lib/chat-tools";
+import { getMessageText } from "@/lib/ai/message-utils";
+import {
+  deriveChatTitle,
+  loadChatDetails,
+  saveStoredChat,
+  type StoredChat,
+} from "@/lib/chat-storage";
+import { 
+  addMemory, 
+  inferMemoryCategory, 
+} from "@/lib/memory-storage";
+import { nanoid } from "nanoid";
+import { useAI } from "./_components/ai-provider";
+
+function AIPageContent() {
+  const PERF_DEBUG = process.env.NEXT_PUBLIC_CHAT_PERF_DEBUG === "1";
+  const STREAM_RENDER_THROTTLE_MS = 80;
+  const CHAT_SIDEBAR_SYNC_DEBOUNCE_MS = 800;
+
+  const {
+    chats,
+    setChats,
+    activeChatId,
+    setActiveChatId,
+    memories,
+    setMemories,
+    mobileSidebarOpen,
+    setMobileSidebarOpen,
+    isSyncing,
+  } = useAI();
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+  const [selectedModel, setSelectedModel] = useState<string>(mistralModels[0].id);
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  
+  const activeChatIdRef = useRef("");
+  const persistedToolCallsRef = useRef(new Set<string>());
+  const chatSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastStreamRenderTickRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
+  const scrollRafRef = useRef<number | null>(null);
+  const lastAutoScrollTsRef = useRef(0);
+  const perfSamplesRef = useRef({ streamUpdates: 0, longFrames: 0, lastTokenTs: 0 });
+  const [renderMessages, setRenderMessages] = useState<UIMessage[]>([]);
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+
+  const chat = useChat({
+    experimental_throttle: STREAM_RENDER_THROTTLE_MS,
+    onFinish: async ({ message }) => {
+      const isNewChat = !chats.find(c => c.id === activeChatId);
+      if (isNewChat) {
+        const firstUserMessage = messages.find(m => m.role === 'user');
+        const assistantText = getMessageText(message);
+        const assistantMessage = { ...message, content: assistantText };
+        
+        const fallbackUserMessage = {
+          id: nanoid(),
+          role: "user" as const,
+          content: "New Chat",
+          parts: [{ type: "text", text: "New Chat" }],
+        } as unknown as UIMessage;
+        const newChatMessages = firstUserMessage 
+          ? [...messages, assistantMessage]
+          : [fallbackUserMessage, assistantMessage];
+
+        const newChat: StoredChat = {
+          id: activeChatId,
+          title: deriveChatTitle(newChatMessages),
+          messages: newChatMessages,
+          updatedAt: Date.now()
+        };
+        setChats(prev => [newChat, ...prev]);
+        router.replace(`/ai?q=${activeChatId}`);
+      }
+
+      for (const { toolCallId, output } of getSaveMemoryToolOutputs(message)) {
+        if (persistedToolCallsRef.current.has(toolCallId)) {
+          continue;
+        }
+
+        persistedToolCallsRef.current.add(toolCallId);
+        const newMemory = await addMemory({
+          title: output.memory.title,
+          content: output.memory.content,
+          category: output.memory.category,
+          source: "chat",
+          tags: [...new Set([...output.memory.tags, "chat", "tool"])],
+        });
+        
+        if (newMemory) {
+          setMemories(prev => [newMemory, ...prev]);
+        }
+        toast.success("Saved to memory.");
+      }
+    },
+    onError: (err) => {
+      console.error("Chat error:", err);
+      toast.error("Chat request failed. Please try again.");
+    },
+  });
+  
+  const { messages, sendMessage, status, regenerate, setMessages } = chat;
+
+  const isLoading = status === "submitted" || status === "streaming";
+
+  const syncActiveChatSummary = useCallback((nextMessages: UIMessage[]) => {
+    if (!activeChatId || activeChatId !== activeChatIdRef.current) return;
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChatId
+          ? {
+              ...chat,
+              messages: nextMessages,
+              title: deriveChatTitle(nextMessages),
+              updatedAt: Date.now(),
+            }
+          : chat
+      )
+    );
+  }, [activeChatId, setChats]);
+
+  // Initial load effect
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (!q) {
+      setMessages([]);
+      return;
+    }
+
+    const loadChat = async () => {
+      try {
+        const fullChat = await loadChatDetails(q);
+        if (fullChat) {
+          setMessages(fullChat.messages || []);
+        } else {
+          setMessages([]);
+        }
+      } catch (error) {
+        console.error("Failed to load chat details:", error);
+      }
+    };
+    loadChat();
+  }, [searchParams, setMessages]);
+
+  useEffect(() => {
+    if (!activeChatId || activeChatId !== activeChatIdRef.current) return;
+    if (isLoading) return;
+    syncActiveChatSummary(messages);
+  }, [messages, activeChatId, isLoading, syncActiveChatSummary]);
+
+  useEffect(() => {
+    if (!activeChatId || activeChatId !== activeChatIdRef.current || !isLoading) return;
+
+    if (chatSyncTimerRef.current) {
+      clearTimeout(chatSyncTimerRef.current);
+    }
+
+    chatSyncTimerRef.current = setTimeout(() => {
+      syncActiveChatSummary(messages);
+      chatSyncTimerRef.current = null;
+    }, CHAT_SIDEBAR_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (chatSyncTimerRef.current) {
+        clearTimeout(chatSyncTimerRef.current);
+      }
+    };
+  }, [messages, isLoading, activeChatId, syncActiveChatSummary]);
+
+  useEffect(() => {
+    if (!messages.length) {
+      setRenderMessages(messages);
+      return;
+    }
+
+    if (!isLoading) {
+      setRenderMessages(messages);
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastStreamRenderTickRef.current;
+    const tick = () => {
+      setRenderMessages(messages);
+      lastStreamRenderTickRef.current = Date.now();
+      if (PERF_DEBUG) {
+        perfSamplesRef.current.streamUpdates += 1;
+      }
+    };
+
+    if (elapsed >= STREAM_RENDER_THROTTLE_MS) {
+      tick();
+      return;
+    }
+
+    if (streamRenderTimerRef.current) {
+      clearTimeout(streamRenderTimerRef.current);
+    }
+    streamRenderTimerRef.current = setTimeout(tick, STREAM_RENDER_THROTTLE_MS - elapsed);
+
+    return () => {
+      if (streamRenderTimerRef.current) {
+        clearTimeout(streamRenderTimerRef.current);
+      }
+    };
+  }, [messages, isLoading, PERF_DEBUG]);
+
+  const scheduleAutoScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container || !shouldAutoScrollRef.current) return;
+    const now = performance.now();
+    if (now - lastAutoScrollTsRef.current < 48) return;
+
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+
+    scrollRafRef.current = requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      lastAutoScrollTsRef.current = performance.now();
+      scrollRafRef.current = null;
+    });
+  }, []);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const onScroll = () => {
+      const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+      shouldAutoScrollRef.current = distanceToBottom <= 120;
+    };
+
+    container.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => container.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    scheduleAutoScroll();
+  }, [renderMessages, status, scheduleAutoScroll]);
+
+  const selectedModelData = useMemo(
+    () => mistralModels.find((model) => model.id === selectedModel),
+    [selectedModel]
+  );
+
+  const onEditMessage = async (id: string, content: string) => {
+    const messageIndex = messages.findIndex(m => m.id === id);
+    if (messageIndex === -1) return;
+
+    const updatedMessage = {
+      ...messages[messageIndex],
+      content,
+      parts: [{ type: "text", text: content }],
+    } as UIMessage;
+    const truncatedMessages = [...messages.slice(0, messageIndex), updatedMessage];
+    
+    setMessages(truncatedMessages);
+    setRenderMessages(truncatedMessages);
+
+    await saveStoredChat({
+      id: activeChatId,
+      messages: truncatedMessages,
+      updatedAt: Date.now()
+    } as any);
+
+    try {
+      const enabledMemories = memories
+        .filter((m) => m.enabled && m.content.trim())
+        .slice(0, 24)
+        .map(({ title, content, category, tags }) => ({ title, content, category, tags }));
+
+      const reloadOptions = {
+        body: {
+          memories: enabledMemories,
+          chatId: activeChatId,
+        }
+      };
+
+      if (typeof (chat as any).reload === 'function') {
+        await (chat as any).reload(reloadOptions);
+      } else if (typeof (chat as any).regenerate === 'function') {
+        await (chat as any).regenerate(reloadOptions);
+      }
+    } catch (e) {
+      console.error('Failed to reload chat:', e);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success("Copied to clipboard"))
+      .catch(() => toast.error("Unable to copy"));
+  };
+
+  const sendMessageWithMemory = async (
+    message: Parameters<typeof sendMessage>[0],
+    options?: Parameters<typeof sendMessage>[1]
+  ) => {
+    const enabledMemories = memories
+      .filter((m) => m.enabled && m.content.trim())
+      .slice(0, 24)
+      .map(({ title, content, category, tags }) => ({ title, content, category, tags }));
+
+    await sendMessage(message, {
+      ...options,
+      body: {
+        ...options?.body,
+        memories: enabledMemories,
+        chatId: activeChatId,
+      },
+    });
+  };
+
+  const regenerateWithMemory = (options?: Parameters<typeof regenerate>[0]) => {
+    const enabledMemories = memories
+      .filter((m) => m.enabled && m.content.trim())
+      .slice(0, 24)
+      .map(({ title, content, category, tags }) => ({ title, content, category, tags }));
+
+    regenerate({
+      ...options,
+      body: {
+        ...options?.body,
+        memories: enabledMemories,
+        chatId: activeChatId,
+      },
+    });
+  };
+
+  const saveMessageToMemory = async (text: string) => {
+    const content = text.trim();
+    if (!content) {
+      toast.error("Nothing to remember in this message.");
+      return;
+    }
+
+    const newMemory = await addMemory({
+      content,
+      category: inferMemoryCategory(content),
+      source: "chat",
+      tags: ["chat"],
+    });
+
+    if (newMemory) {
+      setMemories(prev => [newMemory, ...prev]);
+      toast.success("Saved to memory.");
+    }
+  };
+
+  return (
+    <>
+      <ChatHeader 
+        onOpenMobileSidebar={() => setMobileSidebarOpen(true)} 
+        isSyncing={isSyncing}
+      />
+
+      <div className="flex-1 overflow-y-auto px-4 py-10 scroll-smooth scrollbar-hide" ref={scrollRef}>
+        <div className="mx-auto w-full max-w-3xl space-y-12 pb-40">
+          {renderMessages.length === 0 ? (
+            <EmptyState
+              input={input}
+              setInput={setInput}
+              sendMessage={sendMessageWithMemory}
+              selectedModel={selectedModel}
+            />
+          ) : (
+            <MessageList
+              messages={renderMessages}
+              isLoading={isLoading}
+              copyToClipboard={copyToClipboard}
+              onSaveMemory={saveMessageToMemory}
+              regenerate={regenerateWithMemory}
+              selectedModel={selectedModel}
+              onEditMessage={onEditMessage}
+              scrollContainerRef={scrollRef}
+              debugPerf={PERF_DEBUG}
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#000000] via-[#000000]/80 to-transparent z-10" />
+      {!!renderMessages.length &&
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          isLoading={isLoading}
+          sendMessage={sendMessageWithMemory}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          selectedModelData={selectedModelData}
+          modelSelectorOpen={modelSelectorOpen}
+          setModelSelectorOpen={setModelSelectorOpen}
+        />}
+    </>
+  );
+}
+
+export default function AIPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-full w-full flex items-center justify-center bg-[#000000] text-white/20">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Initializing Jarvis...</span>
+        </div>
+      </div>
+    }>
+      <AIPageContent />
+    </Suspense>
+  );
+}
