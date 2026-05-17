@@ -133,16 +133,18 @@ function AIPageContent() {
   const syncActiveChatSummary = useCallback((nextMessages: UIMessage[]) => {
     if (!activeChatId || activeChatId !== activeChatIdRef.current) return;
     setChats((prev) =>
-      prev.map((chat) =>
-        chat.id === activeChatId
-          ? {
-              ...chat,
-              messages: nextMessages,
-              title: deriveChatTitle(nextMessages),
-              updatedAt: Date.now(),
-            }
-          : chat
-      )
+      prev.map((chat) => {
+        if (chat.id === activeChatId) {
+          const isSameLength = chat.messages?.length === nextMessages.length;
+          return {
+            ...chat,
+            messages: nextMessages,
+            title: deriveChatTitle(nextMessages),
+            updatedAt: isSameLength ? chat.updatedAt : Date.now(),
+          };
+        }
+        return chat;
+      })
     );
   }, [activeChatId, setChats]);
 
@@ -326,6 +328,11 @@ function AIPageContent() {
     message: Parameters<typeof sendMessage>[0],
     options?: Parameters<typeof sendMessage>[1]
   ) => {
+    const isNewChat = !chats.find(c => c.id === activeChatId);
+    if (isNewChat && activeChatId) {
+      window.history.replaceState(null, '', `/ai?q=${activeChatId}`);
+    }
+
     const enabledMemories = memories
       .filter((m) => m.enabled && m.content.trim())
       .slice(0, 24)

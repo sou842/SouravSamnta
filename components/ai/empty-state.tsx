@@ -2,9 +2,9 @@
 
 import React from "react";
 import {
-  ImageIcon,
+  CalendarClock,
   PenLine,
-  Globe,
+  Github,
   Plus,
   Mic,
   AudioLines,
@@ -78,14 +78,13 @@ export function EmptyState({ input, setInput, sendMessage, selectedModel }: Empt
               <Mic size={18} strokeWidth={2} />
             </button>
 
-            <button 
+            <button
               onClick={handleSend}
               disabled={!input.trim()}
-              className={`h-10 w-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                input.trim() 
-                  ? "bg-white text-black hover:scale-105 active:scale-95" 
+              className={`h-10 w-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${input.trim()
+                  ? "bg-white text-black hover:scale-105 active:scale-95"
                   : "bg-white/10 text-white/20 cursor-not-allowed"
-              }`}
+                }`}
             >
               {input.trim() ? (
                 <ArrowRight size={20} strokeWidth={2.5} />
@@ -99,21 +98,21 @@ export function EmptyState({ input, setInput, sendMessage, selectedModel }: Empt
         {/* Actions */}
         <div className="flex flex-wrap justify-center gap-3 mt-8">
           <QuickActionButton
-            icon={<ImageIcon size={15} />}
-            label="Create an image"
-            onClick={() => handleQuickAction("Create an image of ")}
-          />
-
-          <QuickActionButton
             icon={<PenLine size={15} />}
             label="Write or edit"
-            onClick={() => handleQuickAction("Help me write ")}
+            onClick={() => handleQuickAction("Help me write a blog post on AI")}
           />
 
           <QuickActionButton
-            icon={<Globe size={15} />}
-            label="Look something up"
-            onClick={() => handleQuickAction("Search for ")}
+            icon={<CalendarClock size={15} />}
+            label="Scheduler Automation"
+            onClick={() => handleQuickAction("create a Scheduler task to send daily weather report of Kolkata to +91 9903149299 at 8:30 AM")}
+          />
+
+          <QuickActionButton
+            icon={<Github size={15} />}
+            label="GitHub Stats"
+            onClick={() => handleQuickAction("Show my github stats")}
           />
         </div>
       </div>
