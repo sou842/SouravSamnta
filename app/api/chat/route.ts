@@ -80,7 +80,7 @@ const ALLOWED_MODELS = new Set([
 const memoryCategorySchema = z.enum(['profile', 'preference', 'project', 'fact', 'instruction']);
 const taskStatusSchema = z.enum(['todo', 'in-progress', 'done', 'backlog']);
 const taskPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
-const vaultItemTypeSchema = z.enum(['spreadsheet', 'note']);
+const vaultItemTypeSchema = z.enum(['spreadsheet', 'note', 'gallery']);
 const scheduleStatusSchema = z.enum(['active', 'paused', 'completed', 'failed']);
 const scheduleActionTypeSchema = z.enum(['weather_report', 'reminder']);
 const scheduleTypeSchema = z.enum(['one_time', 'recurring']);
@@ -799,11 +799,11 @@ const tools = {
   }),
 
   createVaultItem: tool({
-    description: "Create a new item in the Vault (spreadsheet or note). If you need formatting details, call 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets.",
+    description: "Create a new item in the Vault (spreadsheet, note, or media gallery/album). Use type='gallery' to create an album of images or files.",
     inputSchema: z.object({
       title: z.string().min(1).max(100).describe('Title of the vault item'),
-      type: vaultItemTypeSchema.describe('Type: spreadsheet or note'),
-      content: z.any().describe('Initial content. Use Editor.js blocks for notes or array of objects for spreadsheets.'),
+      type: vaultItemTypeSchema.describe('Type: spreadsheet, note, or gallery'),
+      content: z.any().describe('Initial content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries (each media object should have: id, filename, url, mediaType, size).'),
       tags: z.array(z.string()).default([]).describe('Optional tags'),
     }),
     execute: async (data) => {
@@ -818,11 +818,11 @@ const tools = {
   }),
 
   updateVaultItem: tool({
-    description: "Update an existing Vault item. For formatting details, call 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets.",
+    description: "Update an existing Vault item (spreadsheet, note, or media gallery/album).",
     inputSchema: z.object({
       id: z.string().describe('The MongoDB ID of the Vault item to update'),
       title: z.string().optional().describe('New title'),
-      content: z.any().optional().describe('New content. Completely replaces existing content.'),
+      content: z.any().optional().describe('New content. Completely replaces existing content. Use Editor.js blocks for notes, array of objects for spreadsheets, or array of media objects for galleries.'),
       tags: z.array(z.string()).optional().describe('Updated tags'),
     }),
     execute: async ({ id, ...updateData }) => {
@@ -896,7 +896,7 @@ export async function POST(req: Request) {
       "6. For Gmail: You can access the user's emails. Use 'gmailListMessages' to see their inbox or search for emails, and 'gmailGetMessage' to read the full content of an email. You can help the user summarize threads, find specific info, or keep track of their correspondence.",
       "7. For WhatsApp: You can send messages via Green API. Use 'whatsappSendMessage' to text the user or others from their personal account. Always verify the phone number format (country code + number, e.g., 919903149299). You can also manage contacts using 'saveContact' and 'listContacts'.",
       "8. For WhatsApp Contact Selection: If you see a tag like '@WhatsApp:Name (Phone)' at the start of a message, it is a RECIPIENT OVERRIDE. You MUST call 'whatsappSendMessage' using that phone number for the user's message. Do not mention or include this tag in your final response to the user.",
-      "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data) and notes (unstructured data). Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, or notes in the Vault when asked.",
+      "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' and content=array of media objects (each having: id, filename, url, mediaType, size).",
       memoryContext
 
         ? `Use these saved user memories when relevant. Do not mention them unless it helps the answer.\n${memoryContext}`
