@@ -276,7 +276,7 @@ export function Sidebar({
           {isCollapsed ? (
             <div
               onClick={() => setSidebarOpen(true)}
-              className="w-10 h-10 bg-white/90 text-black rounded-lg flex items-center justify-center text-[10px] font-bold shadow-inner cursor-pointertransition-all"
+              className="w-10 h-10 bg-white/90 text-black rounded-full mb-2 flex items-center justify-center text-[10px] font-bold shadow-inner cursor-pointertransition-all"
             >
               SS
             </div>
