@@ -70,6 +70,8 @@ function estimateRunsForDay(task: ScheduleTask, day: Date) {
 }
 
 function occursOnDay(task: ScheduleTask, day: Date) {
+  if (task.status === "paused") return false;
+
   const dayEnd = endOfDay(day);
   const dayKey = format(day, "yyyy-MM-dd");
 
