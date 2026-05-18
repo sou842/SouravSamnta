@@ -771,6 +771,7 @@ const tools = {
 
   listContacts: tool({
     description: "List all saved WhatsApp contacts.",
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         await dbConnect();
@@ -784,11 +785,13 @@ const tools = {
 
   getVaultNoteGuidelines: tool({
     description: "Get detailed technical guidelines for formatting Vault 'note' items (Editor.js JSON blocks). Call this if you need to create or update a note and are unsure about the block structures.",
+    inputSchema: z.object({}),
     execute: async () => ({ guidelines: VAULT_GUIDELINES.VAULT_NOTE_GUIDELINES }),
   }),
 
   getVaultSheetGuidelines: tool({
     description: "Get detailed technical guidelines for formatting Vault 'spreadsheet' items (array of objects). Call this if you need to create or update a spreadsheet and are unsure about the structure.",
+    inputSchema: z.object({}),
     execute: async () => ({ guidelines: VAULT_GUIDELINES.VAULT_SHEET_GUIDELINES }),
   }),
 
@@ -887,6 +890,59 @@ const tools = {
       }
     },
   }),
+
+  callApi: tool({
+    description: "Make an HTTP/HTTPS API request to any external API. Use this when the user explicitly asks you to fetch data, call an API, make an API request, or trigger a webhook, optionally providing a URL, HTTP method, headers (such as a Bearer token), and a request body.",
+    inputSchema: z.object({
+      url: z.string().url().describe("The full URL of the API to call."),
+      method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET").describe("The HTTP method to use (GET, POST, PUT, DELETE, PATCH)."),
+      headers: z.record(z.string()).optional().describe("Key-value pairs of HTTP headers to send (e.g., Auth token, Content-Type)."),
+      body: z.any().optional().describe("The JSON body to send with the request (for POST/PUT/PATCH requests)."),
+    }),
+    execute: async ({ url, method, headers, body }) => {
+      try {
+        const fetchOptions: RequestInit = {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+        };
+
+        if (body && ["POST", "PUT", "PATCH"].includes(method)) {
+          fetchOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+        }
+
+        const res = await fetch(url, fetchOptions);
+        
+        let responseData;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          responseData = await res.json();
+        } else {
+          responseData = await res.text();
+        }
+
+        const responseHeaders: Record<string, string> = {};
+        res.headers.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+
+        return {
+          status: res.status,
+          statusText: res.statusText,
+          ok: res.ok,
+          headers: responseHeaders,
+          data: responseData,
+        };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error.message || String(error),
+        };
+      }
+    },
+  }),
 };
 
 export async function POST(req: Request) {
@@ -952,13 +1008,18 @@ export async function POST(req: Request) {
       "7. For WhatsApp: You can send messages via Green API. Use 'whatsappSendMessage' to text the user or others from their personal account. Always verify the phone number format (country code + number, e.g., 919903149299). You can also manage contacts using 'saveContact' and 'listContacts'.",
       "8. For WhatsApp Contact Selection: If you see a tag like '@WhatsApp:Name (Phone)' at the start of a message, it is a RECIPIENT OVERRIDE. You MUST call 'whatsappSendMessage' using that phone number for the user's message. Do not mention or include this tag in your final response to the user.",
       "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' or type='album' and content=array of media objects (each having: id, filename, url, mediaType, size).",
+      "10. For calling arbitrary APIs: Use 'callApi' when the user asks you to call, fetch, or request an external API or webhook. If they provide headers or a token (e.g. 'token: Bearer ...' or 'Authorization: ...'), make sure to pass them in the 'headers' object of the tool input. For token authentication, construct the appropriate 'Authorization' header. If they don't specify the HTTP method, default to 'GET'.",
       memoryContext
         ? `Use these saved user memories when relevant. Do not mention them unless it helps the answer.\n${memoryContext}`
         : "",
       attachedFilesContext
     ].filter(Boolean).join("\n\n");
 
-    const finalSystemPrompt = clientSystemPrompt || systemPrompt;
+    const finalSystemPrompt = clientSystemPrompt
+      ? `${systemPrompt}\n\nAdditional Context:\n${clientSystemPrompt}`
+      : systemPrompt;
+
+    console.log(clientSystemPrompt, finalSystemPrompt, "tara")
 
     const normalizedMessages = (messages || []).map((m: any) => ({
       ...m,
