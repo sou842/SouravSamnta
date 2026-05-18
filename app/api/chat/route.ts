@@ -943,6 +943,214 @@ const tools = {
       }
     },
   }),
+
+  googleMeetSchedule: tool({
+    description: "Create a Google Calendar event with Google Meet enabled. Use this when the user asks to schedule a Google Meet, video call, or meeting.",
+    inputSchema: z.object({
+      summary: z.string().describe("Title or summary of the meeting"),
+      description: z.string().optional().describe("Description or agenda of the meeting"),
+      startTime: z.string().describe("Start time of the meeting in ISO format (YYYY-MM-DDTHH:MM:SS) or relative date/time context"),
+      endTime: z.string().describe("End time of the meeting in ISO format (YYYY-MM-DDTHH:MM:SS) or relative date/time context"),
+      attendees: z.array(z.string().email()).optional().describe("Optional list of attendee email addresses"),
+      timezone: z.string().default("Asia/Kolkata").describe("Timezone for the meeting (e.g., 'Asia/Kolkata')"),
+    }),
+    execute: async ({ summary, description, startTime, endTime, attendees, timezone }) => {
+      try {
+        const token = await getGoogleAccessToken();
+        const requestId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        
+        const eventBody = {
+          summary,
+          description,
+          start: {
+            dateTime: startTime,
+            timeZone: timezone,
+          },
+          end: {
+            dateTime: endTime,
+            timeZone: timezone,
+          },
+          attendees: attendees?.map(email => ({ email })),
+          conferenceData: {
+            createRequest: {
+              requestId,
+              conferenceSolutionKey: {
+                type: "hangoutsMeet",
+              },
+            },
+          },
+        };
+
+        const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(eventBody),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          return { success: false, error: `Google API error: ${res.statusText}. ${JSON.stringify(errData)}` };
+        }
+
+        const data = await res.json();
+        const meetLink = data.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri || null;
+
+        return {
+          success: true,
+          eventId: data.id,
+          htmlLink: data.htmlLink,
+          meetLink,
+          summary: data.summary,
+          start: data.start,
+          end: data.end,
+        };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+  }),
+
+  googleMeetListMeetings: tool({
+    description: "List upcoming calendar events to check schedules or retrieve Google Meet/video conference links.",
+    inputSchema: z.object({
+      timeMin: z.string().optional().describe("ISO format string to filter events starting from this time. Defaults to current time."),
+      timeMax: z.string().optional().describe("ISO format string to filter events up to this time."),
+      maxResults: z.number().max(50).default(10).describe("Maximum number of events to return."),
+    }),
+    execute: async ({ timeMin, timeMax, maxResults }) => {
+      try {
+        const token = await getGoogleAccessToken();
+        const minTime = timeMin || new Date().toISOString();
+        let url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent(minTime)}&maxResults=${maxResults}`;
+        if (timeMax) {
+          url += `&timeMax=${encodeURIComponent(timeMax)}`;
+        }
+
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          return { success: false, error: `Google API error: ${res.statusText}` };
+        }
+
+        const data = await res.json();
+        if (!data.items) return { success: true, meetings: [] };
+
+        const meetings = data.items.map((event: any) => {
+          const meetLink = event.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri || null;
+          return {
+            id: event.id,
+            summary: event.summary,
+            description: event.description || "",
+            start: event.start,
+            end: event.end,
+            meetLink,
+            attendees: event.attendees?.map((a: any) => a.email) || [],
+          };
+        });
+
+        return { success: true, meetings };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+  }),
+
+  googleMeetUpdate: tool({
+    description: "Update details of an existing Google Calendar event or Google Meet, such as rescheduling, changing summary/description, or modifying attendees. You must have the event ID (usually retrieved via googleMeetListMeetings).",
+    inputSchema: z.object({
+      eventId: z.string().describe("The Google Calendar event ID to update"),
+      summary: z.string().optional().describe("New title/summary for the meeting"),
+      description: z.string().optional().describe("New description or agenda"),
+      startTime: z.string().optional().describe("New start time in ISO format"),
+      endTime: z.string().optional().describe("New end time in ISO format"),
+      attendees: z.array(z.string().email()).optional().describe("Updated complete list of attendee email addresses"),
+      timezone: z.string().default("Asia/Kolkata").describe("Timezone for the meeting"),
+    }),
+    execute: async ({ eventId, summary, description, startTime, endTime, attendees, timezone }) => {
+      try {
+        const token = await getGoogleAccessToken();
+        const updateBody: any = {};
+        if (summary !== undefined) updateBody.summary = summary;
+        if (description !== undefined) updateBody.description = description;
+        if (startTime !== undefined) {
+          updateBody.start = {
+            dateTime: startTime,
+            timeZone: timezone,
+          };
+        }
+        if (endTime !== undefined) {
+          updateBody.end = {
+            dateTime: endTime,
+            timeZone: timezone,
+          };
+        }
+        if (attendees !== undefined) {
+          updateBody.attendees = attendees.map(email => ({ email }));
+        }
+
+        const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}?conferenceDataVersion=1`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateBody),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          return { success: false, error: `Google API error: ${res.statusText}. ${JSON.stringify(errData)}` };
+        }
+
+        const data = await res.json();
+        const meetLink = data.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri || null;
+
+        return {
+          success: true,
+          eventId: data.id,
+          meetLink,
+          summary: data.summary,
+          start: data.start,
+          end: data.end,
+        };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+  }),
+
+  googleMeetCancel: tool({
+    description: "Cancel (delete) an existing Google Calendar event or Google Meet by event ID.",
+    inputSchema: z.object({
+      eventId: z.string().describe("The Google Calendar event ID to delete"),
+    }),
+    execute: async ({ eventId }) => {
+      try {
+        const token = await getGoogleAccessToken();
+        const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          return { success: false, error: `Google API error: ${res.statusText}` };
+        }
+
+        return { success: true, message: "Meeting canceled successfully" };
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
+    },
+  }),
 };
 
 export async function POST(req: Request) {
@@ -1009,6 +1217,7 @@ export async function POST(req: Request) {
       "8. For WhatsApp Contact Selection: If you see a tag like '@WhatsApp:Name (Phone)' at the start of a message, it is a RECIPIENT OVERRIDE. You MUST call 'whatsappSendMessage' using that phone number for the user's message. Do not mention or include this tag in your final response to the user.",
       "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' or type='album' and content=array of media objects (each having: id, filename, url, mediaType, size).",
       "10. For calling arbitrary APIs: Use 'callApi' when the user asks you to call, fetch, or request an external API or webhook. If they provide headers or a token (e.g. 'token: Bearer ...' or 'Authorization: ...'), make sure to pass them in the 'headers' object of the tool input. For token authentication, construct the appropriate 'Authorization' header. If they don't specify the HTTP method, default to 'GET'.",
+      "11. For Google Meet/Google Calendar: You can manage meetings and schedule video calls via Google Meet. Use 'googleMeetSchedule' to book a new meeting and generate a video link (always specify the title, start time, end time, and attendees if mentioned). Use 'googleMeetListMeetings' to list upcoming meetings, 'googleMeetUpdate' to reschedule or edit details, and 'googleMeetCancel' to cancel a meeting.",
       memoryContext
         ? `Use these saved user memories when relevant. Do not mention them unless it helps the answer.\n${memoryContext}`
         : "",
