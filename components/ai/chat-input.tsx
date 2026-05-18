@@ -105,7 +105,7 @@ const ModelItem = memo(
       value={m.id}
       className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors data-[selected=true]:bg-white/5"
     >
-      <div className="flex items-center justify-center size-6 rounded-lg bg-white/5 border border-white/10">
+      <div className="flex items-center justify-center size-6 rounded-full bg-white/60 border border-white/10">
         <ModelSelectorLogo provider={m.chefSlug} className="size-3.5 opacity-80" />
       </div>
       
@@ -299,7 +299,7 @@ export function ChatInput({
         )}
 
         <PromptInput
-          className="pointer-events-auto bg-[#131313] rounded-xl border border-white/10 shadow-2xl transition-all duration-300"
+          className="pointer-events-auto bg-[#131313] rounded border-0 border-white/10 shadow-2xl transition-all duration-300"
           onSubmit={async (message) => {
             const allFiles = attachmentsRef.current?.files || message.files || [];
             if (!message.text.trim() && allFiles.length === 0) return;
