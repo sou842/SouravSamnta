@@ -80,6 +80,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (action === "update_ai_status") {
+    const { status, thought } = message;
+    chrome.storage.local.set({
+      aiStatus: {
+        status,
+        thought,
+        timestamp: Date.now()
+      }
+    }).then(() => {
+      sendResponse({ success: true });
+    }).catch((err) => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
   // Handle open_companion synchronously/immediately to preserve user gesture
   if (action === "open_companion") {
     const tabId = sender?.tab?.id;

@@ -1318,6 +1318,7 @@ export const PromptInputSubmit = ({
       size={size}
       type={isGenerating && onStop ? "button" : "submit"}
       variant={variant}
+      disabled={isGenerating && !onStop}
       {...props}
     >
       {children ?? Icon}

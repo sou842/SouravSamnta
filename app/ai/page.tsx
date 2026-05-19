@@ -74,7 +74,42 @@ function AIPageContent() {
   }, [activeChatId]);
 
   const chat = useChat({
+    maxSteps: 20,
     experimental_throttle: STREAM_RENDER_THROTTLE_MS,
+    async onToolCall({ toolCall }) {
+      console.log("[Jarvis AI] Tool Call Received from AI Model:", toolCall);
+      if (toolCall.toolName === "browserControl") {
+        const { action, url, selector, query, script, description } = toolCall.input as any;
+        console.log("[Jarvis AI] Executing Browser Control command:", { action, url, selector, query, script, description });
+        setBrowserCommandStates((prev) => ({
+          ...prev,
+          [toolCall.toolCallId]: { status: "running" }
+        }));
+        try {
+          const extensionResult = await sendBrowserCommand({
+            action,
+            url,
+            selector,
+            query,
+            script,
+            description
+          });
+          console.log("[Jarvis AI] Browser command success response from extension:", extensionResult);
+          setBrowserCommandStates((prev) => ({
+            ...prev,
+            [toolCall.toolCallId]: { status: "success", result: extensionResult }
+          }));
+          return extensionResult;
+        } catch (err: any) {
+          console.error("[Jarvis AI] Browser command failed to execute:", err);
+          setBrowserCommandStates((prev) => ({
+            ...prev,
+            [toolCall.toolCallId]: { status: "error", error: err.message || String(err) }
+          }));
+          return { error: err.message || String(err) };
+        }
+      }
+    },
     onFinish: async ({ message }) => {
       const isNewChat = !chats.find(c => c.id === activeChatId);
       if (isNewChat) {
@@ -138,53 +173,59 @@ function AIPageContent() {
     error?: string;
     result?: any;
   }>>({});
-  const executedToolCallsRef = useRef<Set<string>>(new Set());
 
+  // Notify extension of AI planning & status
   useEffect(() => {
-    messages.forEach((message) => {
-      if (message.role === "assistant" && message.toolInvocations) {
-        message.toolInvocations.forEach(async (toolCall: any) => {
-          if (toolCall.toolName === "browserControl" && toolCall.state === "result") {
-            const toolCallId = toolCall.toolCallId;
-            if (executedToolCallsRef.current.has(toolCallId)) return;
-            executedToolCallsRef.current.add(toolCallId);
+    if (!extensionConnected) return;
 
-            const result = toolCall.result;
-            if (result && result.status === "delegated_to_client") {
-              const { action, url, selector, query, script, description } = result;
+    const lastMessage = messages[messages.length - 1];
+    let thought = "";
+    let aiStatus: "thinking" | "streaming" | "ready" | "error" | "executing_tool" = "ready";
 
-              setBrowserCommandStates((prev) => ({
-                ...prev,
-                [toolCallId]: { status: "running" }
-              }));
-
-              try {
-                const extensionResult = await sendBrowserCommand({
-                  action,
-                  url,
-                  selector,
-                  query,
-                  script,
-                  description
-                });
-
-                setBrowserCommandStates((prev) => ({
-                  ...prev,
-                  [toolCallId]: { status: "success", result: extensionResult }
-                }));
-              } catch (err: any) {
-                console.error("Browser control execution failed:", err);
-                setBrowserCommandStates((prev) => ({
-                  ...prev,
-                  [toolCallId]: { status: "error", error: err.message || String(err) }
-                }));
-              }
-            }
-          }
-        });
+    if (status === "submitted") {
+      aiStatus = "thinking";
+      thought = "Connecting to Jarvis Brain & planning next steps...";
+    } else if (status === "streaming") {
+      aiStatus = "streaming";
+      // Find the last assistant message and use its content as the live thought stream
+      const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMessage) {
+        thought = getMessageText(lastAssistantMessage);
+        
+        // Check if there are incomplete tool calls in it
+        const hasActiveToolCall = lastAssistantMessage.parts?.some(
+          part => part.type === "tool-call" && !messages.some(
+            m => m.role === "tool" && m.parts?.some(
+              p => p.type === "tool-result" && p.toolCallId === (part as any).toolCallId
+            )
+          )
+        );
+        if (hasActiveToolCall) {
+          aiStatus = "executing_tool";
+        }
+      } else {
+        thought = "Thinking...";
       }
-    });
-  }, [messages, sendBrowserCommand]);
+    } else if (status === "error") {
+      aiStatus = "error";
+      thought = "An error occurred during response generation.";
+    } else {
+      aiStatus = "ready";
+      thought = "Idle. Awaiting user prompt.";
+    }
+
+    // Send the state update to the browser extension
+    window.postMessage({
+      source: "jarvis-webpage",
+      messageId: "status-update-" + Date.now(),
+      message: {
+        action: "update_ai_status",
+        status: aiStatus,
+        thought: thought
+      }
+    }, "*");
+  }, [status, messages, extensionConnected]);
+
 
   const syncActiveChatSummary = useCallback((nextMessages: UIMessage[]) => {
     if (!activeChatId || activeChatId !== activeChatIdRef.current) return;

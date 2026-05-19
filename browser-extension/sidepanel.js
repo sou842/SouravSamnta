@@ -7,23 +7,73 @@ const statusText = document.getElementById("statusText");
 const activeTabInfo = document.getElementById("activeTabInfo");
 const consoleLogs = document.getElementById("consoleLogs");
 const btnClearLogs = document.getElementById("btnClearLogs");
-const manualUrlInput = document.getElementById("manualUrl");
-const btnOpenUrl = document.getElementById("btnOpenUrl");
-const btnCheckTab = document.getElementById("btnCheckTab");
-const btnOpenDashboard = document.getElementById("btnOpenDashboard");
+const aiStatusPanel = document.getElementById("aiStatusPanel");
+const aiStateIndicator = document.getElementById("aiStateIndicator");
+const aiThoughtDetails = document.getElementById("aiThoughtDetails");
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
   updateActiveTabInfo();
   loadLogs();
+  loadAIStatus();
   checkJarvisConnection();
 
   // Poll active tab and connection status every 2 seconds
   setInterval(() => {
     updateActiveTabInfo();
     checkJarvisConnection();
+    // Also periodically re-evaluate staleness of AI status (e.g. if ready)
+    loadAIStatus();
   }, 2000);
 });
+
+// Load AI Status from chrome.storage
+async function loadAIStatus() {
+  try {
+    const data = await chrome.storage.local.get({ aiStatus: null });
+    updateAIStatusDisplay(data.aiStatus);
+  } catch (err) {
+    console.error("Error loading AI status:", err);
+  }
+}
+
+// Update AI Status Panel display
+function updateAIStatusDisplay(aiStatus) {
+  if (!aiStatus) {
+    aiStatusPanel.style.display = "none";
+    return;
+  }
+
+  // If status is "ready" and it was updated more than 15 seconds ago, hide it to keep UI clean
+  const isStale = aiStatus.status === "ready" && (Date.now() - aiStatus.timestamp > 15000);
+  if (isStale) {
+    aiStatusPanel.style.display = "none";
+    return;
+  }
+
+  aiStatusPanel.style.display = "block";
+
+  let statusClass = "status-running";
+  let statusText = "⚡ Thinking";
+
+  if (aiStatus.status === "streaming") {
+    statusClass = "status-running";
+    statusText = "⚡ Streaming Response";
+  } else if (aiStatus.status === "ready") {
+    statusClass = "status-success";
+    statusText = "✓ Ready";
+  } else if (aiStatus.status === "error") {
+    statusClass = "status-error";
+    statusText = "✗ Error";
+  } else if (aiStatus.status === "executing_tool") {
+    statusClass = "status-running";
+    statusText = "⚙ Executing Tool";
+  }
+
+  aiStateIndicator.className = statusClass;
+  aiStateIndicator.innerText = statusText;
+  aiThoughtDetails.innerText = aiStatus.thought || "Planning next steps...";
+}
 
 // Load Logs from chrome.storage
 async function loadLogs() {
@@ -69,10 +119,15 @@ function renderLogs(logs) {
   }).join("");
 }
 
-// Listen for storage changes to update logs in real-time
+// Listen for storage changes to update logs and AI status in real-time
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.logs) {
-    renderLogs(changes.logs.newValue);
+  if (area === "local") {
+    if (changes.logs) {
+      renderLogs(changes.logs.newValue);
+    }
+    if (changes.aiStatus) {
+      updateAIStatusDisplay(changes.aiStatus.newValue);
+    }
   }
 });
 
@@ -120,27 +175,4 @@ btnClearLogs.addEventListener("click", async () => {
   } catch (err) {
     console.error("Failed to clear logs:", err);
   }
-});
-
-btnOpenUrl.addEventListener("click", () => {
-  let url = manualUrlInput.value.trim();
-  if (!url) return;
-  
-  if (!/^https?:\/\//i.test(url)) {
-    url = "https://" + url;
-  }
-  
-  chrome.tabs.create({ url }, () => {
-    manualUrlInput.value = "";
-    updateActiveTabInfo();
-  });
-});
-
-btnCheckTab.addEventListener("click", () => {
-  updateActiveTabInfo();
-  checkJarvisConnection();
-});
-
-btnOpenDashboard.addEventListener("click", () => {
-  chrome.tabs.create({ url: "http://localhost:3000/ai" });
 });

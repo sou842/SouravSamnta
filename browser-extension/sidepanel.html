@@ -355,6 +355,19 @@
       <div class="tab-info" id="activeTabInfo">Loading active tab details...</div>
     </div>
 
+    <!-- AI Status & Plan -->
+    <div class="info-panel" id="aiStatusPanel" style="display: none; border-color: rgba(0, 210, 255, 0.2); background: rgba(0, 210, 255, 0.02); transition: all 0.3s ease;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+        <div class="panel-title" style="color: var(--primary);">Jarvis AI Brain</div>
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500;">
+          <span id="aiStateIndicator" class="status-running">⚡ Thinking</span>
+        </div>
+      </div>
+      <div id="aiThoughtDetails" style="font-size: 12px; line-height: 1.5; color: #cbd5e1; max-height: 80px; overflow-y: auto; font-style: italic;">
+        Jarvis is deciding on the next step...
+      </div>
+    </div>
+
     <!-- Live Console logs -->
     <div class="console-section">
       <div class="console-header">
@@ -365,21 +378,6 @@
         <!-- Logs dynamically added here -->
         <div style="color: var(--text-muted); text-align: center; margin-top: 20px;">No browser commands recorded yet.</div>
       </div>
-    </div>
-
-    <!-- Manual Control Panel -->
-    <div class="test-panel">
-      <div class="panel-title">Manual URL Control</div>
-      <div class="input-wrapper">
-        <input type="text" id="manualUrl" placeholder="Enter URL (e.g. https://youtube.com)">
-        <button id="btnOpenUrl" class="btn-primary" style="padding: 8px 14px;">Open</button>
-      </div>
-    </div>
-
-    <!-- Control Buttons -->
-    <div class="button-group">
-      <button id="btnCheckTab">Refresh Tab</button>
-      <button id="btnOpenDashboard">Open Jarvis</button>
     </div>
   </div>
 

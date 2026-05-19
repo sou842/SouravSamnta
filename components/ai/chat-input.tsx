@@ -45,6 +45,7 @@ export const mistralModels = [
   { chefSlug: "mistral", id: "codestral-latest", name: "Codestral", providers: ["mistral"] },
   { chefSlug: "deepseek", id: "deepseek-reasoner", name: "DeepSeek R1", providers: ["deepseek"] },
   { chefSlug: "google", id: "gemini-2.5-flash", name: "Gemini Flash", providers: ["google"] },
+  { chefSlug: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", providers: ["openai"] },
 ] as const;
 
 export type ModelItemData = (typeof mistralModels)[number];
@@ -302,6 +303,7 @@ export function ChatInput({
         <PromptInput
           className="pointer-events-auto bg-[#131313] rounded border-0 border-white/10 shadow-2xl transition-all duration-300"
           onSubmit={async (message) => {
+            if (isLoading) return;
             const allFiles = attachmentsRef.current?.files || message.files || [];
             if (!message.text.trim() && allFiles.length === 0) return;
             
