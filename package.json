@@ -71,6 +71,7 @@
     "zod": "3.25.76"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.75",
     "@ai-sdk/mistral": "^3.0.36",
     "@ai-sdk/openai": "^3.0.63",
     "@ai-sdk/react": "^3.0.184",

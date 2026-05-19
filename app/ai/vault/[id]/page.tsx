@@ -39,9 +39,8 @@ export default function VaultItemPage() {
   const [content, setContent] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<string>(mistralModels[0].id);
   const [input, setInput] = useState("");
-  const { memories } = useAI();
+  const { memories, selectedModel, setSelectedModel } = useAI();
 
   const chat = useChat({
     id: `vault-item-${id}`,

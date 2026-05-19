@@ -1,5 +1,6 @@
 import { createMistral } from '@ai-sdk/mistral';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { streamText, convertToModelMessages, stepCountIs, tool, type UIMessage } from 'ai';
 import dbConnect from '@/lib/mongodb';
 import Chat from '@/lib/models/Chat';
@@ -81,6 +82,11 @@ const deepseek = createOpenAI({
   fetch: customFetch,
 });
 
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  fetch: customFetch,
+});
+
 const chatRequestSchema = z.object({
   chatId: z.string().optional(),
   model: z.string().optional(),
@@ -107,6 +113,7 @@ const chatRequestSchema = z.object({
 const ALLOWED_MODELS = new Set([
   'mistral-small-latest',
   'mistral-large-latest',
+  'gemini-2.5-flash',
   'codestral-latest',
   'deepseek-reasoner',
 ]);
@@ -1169,7 +1176,11 @@ export async function POST(req: Request) {
       ? requestedModel
       : 'mistral-large-latest';
 
-    const provider = model === 'deepseek-reasoner' ? deepseek : mistral;
+    const provider = model === 'deepseek-reasoner' 
+      ? deepseek 
+      : model === 'gemini-2.5-flash'
+        ? google
+        : mistral;
 
     let canPersist = false;
     try {

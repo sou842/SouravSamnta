@@ -42,13 +42,14 @@ function AIPageContent() {
     mobileSidebarOpen,
     setMobileSidebarOpen,
     isSyncing,
+    selectedModel,
+    setSelectedModel,
   } = useAI();
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState<string>(mistralModels[0].id);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   
   const activeChatIdRef = useRef("");

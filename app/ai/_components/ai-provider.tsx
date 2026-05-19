@@ -17,6 +17,7 @@ import {
   type MemoryItem,
 } from "@/lib/memory-storage";
 import { useSidebarResize } from "@/app/ai/_hooks/use-sidebar-resize";
+import { mistralModels } from "@/components/ai/chat-input";
 
 interface AIContextType {
   chats: StoredChat[];
@@ -36,6 +37,8 @@ interface AIContextType {
   removeChat: (id: string) => Promise<void>;
   onRenameChat: (id: string, title: string) => Promise<void>;
   onSelectChat: (id: string) => void;
+  selectedModel: string;
+  setSelectedModel: (id: string) => void;
 }
 
 const AIContext = createContext<AIContextType | undefined>(undefined);
@@ -52,6 +55,24 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const { sidebarWidth, startResize } = useSidebarResize();
+  
+  const [selectedModel, setSelectedModelState] = useState<string>(mistralModels[0].id);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("selected-model");
+      if (saved && mistralModels.some(m => m.id === saved)) {
+        setSelectedModelState(saved);
+      }
+    }
+  }, []);
+
+  const setSelectedModel = useCallback((id: string) => {
+    setSelectedModelState(id);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("selected-model", id);
+    }
+  }, []);
 
   const activeChatIdRef = useRef("");
 
@@ -164,6 +185,8 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
         removeChat,
         onRenameChat,
         onSelectChat,
+        selectedModel,
+        setSelectedModel,
       }}
     >
       {children}

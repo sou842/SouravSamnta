@@ -44,6 +44,7 @@ export const mistralModels = [
   { chefSlug: "mistral", id: "mistral-large-latest", name: "Mistral Large", providers: ["mistral"] },
   { chefSlug: "mistral", id: "codestral-latest", name: "Codestral", providers: ["mistral"] },
   { chefSlug: "deepseek", id: "deepseek-reasoner", name: "DeepSeek R1", providers: ["deepseek"] },
+  { chefSlug: "google", id: "gemini-2.5-flash", name: "Gemini Flash", providers: ["google"] },
 ] as const;
 
 export type ModelItemData = (typeof mistralModels)[number];
