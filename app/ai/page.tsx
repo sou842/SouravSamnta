@@ -26,6 +26,7 @@ import {
 } from "@/lib/memory-storage";
 import { nanoid } from "nanoid";
 import { useAI } from "./_components/ai-provider";
+import { useBrowserExtension } from "@/hooks/use-browser-extension";
 
 function AIPageContent() {
   const PERF_DEBUG = process.env.NEXT_PUBLIC_CHAT_PERF_DEBUG === "1";
@@ -130,6 +131,60 @@ function AIPageContent() {
   const { messages, sendMessage, status, regenerate, setMessages } = chat;
 
   const isLoading = status === "submitted" || status === "streaming";
+
+  const { isConnected: extensionConnected, sendBrowserCommand, openCompanion } = useBrowserExtension();
+  const [browserCommandStates, setBrowserCommandStates] = useState<Record<string, {
+    status: "idle" | "running" | "success" | "error";
+    error?: string;
+    result?: any;
+  }>>({});
+  const executedToolCallsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    messages.forEach((message) => {
+      if (message.role === "assistant" && message.toolInvocations) {
+        message.toolInvocations.forEach(async (toolCall: any) => {
+          if (toolCall.toolName === "browserControl" && toolCall.state === "result") {
+            const toolCallId = toolCall.toolCallId;
+            if (executedToolCallsRef.current.has(toolCallId)) return;
+            executedToolCallsRef.current.add(toolCallId);
+
+            const result = toolCall.result;
+            if (result && result.status === "delegated_to_client") {
+              const { action, url, selector, query, script, description } = result;
+
+              setBrowserCommandStates((prev) => ({
+                ...prev,
+                [toolCallId]: { status: "running" }
+              }));
+
+              try {
+                const extensionResult = await sendBrowserCommand({
+                  action,
+                  url,
+                  selector,
+                  query,
+                  script,
+                  description
+                });
+
+                setBrowserCommandStates((prev) => ({
+                  ...prev,
+                  [toolCallId]: { status: "success", result: extensionResult }
+                }));
+              } catch (err: any) {
+                console.error("Browser control execution failed:", err);
+                setBrowserCommandStates((prev) => ({
+                  ...prev,
+                  [toolCallId]: { status: "error", error: err.message || String(err) }
+                }));
+              }
+            }
+          }
+        });
+      }
+    });
+  }, [messages, sendBrowserCommand]);
 
   const syncActiveChatSummary = useCallback((nextMessages: UIMessage[]) => {
     if (!activeChatId || activeChatId !== activeChatIdRef.current) return;
@@ -386,12 +441,22 @@ function AIPageContent() {
     }
   };
 
+  const handleOpenCompanion = useCallback(() => {
+    openCompanion()
+      .catch((err) => {
+        console.warn("Failed to open companion automatically:", err);
+        toast.info("On Firefox, please open the Sidebar manually using Cmd+Opt+Y (Mac) or Ctrl+Alt+Y (Windows/Linux).");
+      });
+  }, [openCompanion]);
+
   return (
     <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative w-full h-full">
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         <ChatHeader 
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)} 
           isSyncing={isSyncing}
+          extensionConnected={extensionConnected}
+          openCompanion={handleOpenCompanion}
         />
 
         <div className="flex-1 overflow-y-auto px-4 py-10 scroll-smooth scrollbar-hide" ref={scrollRef}>
@@ -414,6 +479,7 @@ function AIPageContent() {
                 onEditMessage={onEditMessage}
                 scrollContainerRef={scrollRef}
                 debugPerf={PERF_DEBUG}
+                browserCommandStates={browserCommandStates}
               />
             )}
           </div>

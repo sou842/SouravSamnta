@@ -26,6 +26,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { WeatherCard } from "@/components/ai/weather-card";
+import { BrowserCard } from "@/components/ai/browser-card";
 
 interface MessageListProps {
   messages: UIMessage[];
@@ -37,6 +38,7 @@ interface MessageListProps {
   onEditMessage?: (id: string, content: string) => void;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   debugPerf?: boolean;
+  browserCommandStates?: Record<string, { status: "idle" | "running" | "success" | "error"; error?: string; result?: any }>;
 }
 
 export function MessageList({
@@ -49,6 +51,7 @@ export function MessageList({
   onEditMessage,
   scrollContainerRef,
   debugPerf = false,
+  browserCommandStates,
 }: MessageListProps) {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editingContent, setEditingContent] = React.useState("");
@@ -135,6 +138,7 @@ export function MessageList({
                   editingContent={editingContent}
                   setEditingId={setEditingId}
                   setEditingContent={setEditingContent}
+                  browserCommandStates={browserCommandStates}
                 />
               );
             })}
@@ -157,6 +161,7 @@ export function MessageList({
               editingContent={editingContent}
               setEditingId={setEditingId}
               setEditingContent={setEditingContent}
+              browserCommandStates={browserCommandStates}
             />
           );
         })
@@ -195,6 +200,7 @@ type MessageRowProps = {
   editingContent: string;
   setEditingId: React.Dispatch<React.SetStateAction<string | null>>;
   setEditingContent: React.Dispatch<React.SetStateAction<string>>;
+  browserCommandStates?: Record<string, { status: "idle" | "running" | "success" | "error"; error?: string; result?: any }>;
 };
 
 const MessageRow = React.memo(function MessageRow({
@@ -209,6 +215,7 @@ const MessageRow = React.memo(function MessageRow({
   editingContent,
   setEditingId,
   setEditingContent,
+  browserCommandStates,
 }: MessageRowProps) {
   const text = getMessageText(message);
   const messageAttachments = getMessageAttachments(message);
@@ -217,6 +224,10 @@ const MessageRow = React.memo(function MessageRow({
   
   const weatherInvocations = (message as any)?.toolInvocations?.filter(
     (ti:any) => ti.state === 'result' && ti.toolName === 'getWeather' && ti.result && !('error' in ti.result)
+  );
+
+  const browserInvocations = (message as any)?.toolInvocations?.filter(
+    (ti: any) => ti.toolName === 'browserControl'
   );
 
   const toolInvocations = (message as any)?.toolInvocations;
@@ -241,6 +252,7 @@ const MessageRow = React.memo(function MessageRow({
       whatsappSendMessage: "Sending WhatsApp",
       saveContact: "Saving contact",
       listContacts: "Fetching contacts",
+      browserControl: "Controlling browser",
     };
     return labels[toolName] || `Executing ${toolName}`;
   };
@@ -356,6 +368,39 @@ const MessageRow = React.memo(function MessageRow({
             {!isEditing && weatherInvocations?.map((invocation: any) => (
               <WeatherCard key={invocation.toolCallId} data={invocation.result as any} />
             ))}
+
+            {!isEditing && browserInvocations?.map((invocation: any) => {
+              const commandState = browserCommandStates?.[invocation.toolCallId] || {
+                status: invocation.state === "result" ? "success" : "idle",
+                result: invocation.result
+              };
+              let cardStatus = commandState.status;
+              let cardError = commandState.error;
+              let cardResult = commandState.result;
+
+              if (invocation.state === "result" && invocation.result?.status === "delegated_to_client" && cardStatus === "idle") {
+                cardStatus = "error";
+                cardError = "Browser extension offline.";
+              } else if (invocation.state === "result" && invocation.result?.status !== "delegated_to_client") {
+                cardStatus = "success";
+                cardResult = invocation.result;
+              }
+
+              const args = invocation.args || {};
+              const action = args.action || "";
+              const description = args.description || "";
+
+              return (
+                <BrowserCard 
+                  key={invocation.toolCallId}
+                  action={action}
+                  description={description}
+                  status={cardStatus as any}
+                  error={cardError}
+                  result={cardResult}
+                />
+              );
+            })}
 
             
             {!editingId && messageAttachments.length > 0 && (

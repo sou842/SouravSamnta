@@ -1158,6 +1158,30 @@ const tools = {
       }
     },
   }),
+
+  browserControl: tool({
+    description: "Control the user's browser via the extension. Use this when the user asks to open tabs, search on YouTube or Google, click page elements, or run custom JS scripts. Available actions: 'open_tab', 'search', 'click_element', 'execute_script', 'get_active_tab'.",
+    inputSchema: z.object({
+      action: z.enum(['open_tab', 'search', 'click_element', 'execute_script', 'get_active_tab'])
+        .describe("The browser action to execute"),
+      url: z.string().optional()
+        .describe("The target URL (required for 'open_tab')"),
+      selector: z.string().optional()
+        .describe("CSS selector to click (required for 'click_element')"),
+      query: z.string().optional()
+        .describe("Search query (required for 'search')"),
+      script: z.string().optional()
+        .describe("JavaScript string to execute (required for 'execute_script')"),
+      description: z.string()
+        .describe("User-friendly explanation of what this browser command is doing (e.g., 'Opening YouTube')"),
+    }),
+    execute: async (data) => {
+      return {
+        status: 'delegated_to_client',
+        ...data,
+      };
+    },
+  }),
 };
 
 export async function POST(req: Request) {
@@ -1229,6 +1253,7 @@ export async function POST(req: Request) {
       "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' or type='album' and content=array of media objects (each having: id, filename, url, mediaType, size).",
       "10. For calling arbitrary APIs: Use 'callApi' when the user asks you to call, fetch, or request an external API or webhook. If they provide headers or a token (e.g. 'token: Bearer ...' or 'Authorization: ...'), make sure to pass them in the 'headers' object of the tool input. For token authentication, construct the appropriate 'Authorization' header. If they don't specify the HTTP method, default to 'GET'.",
       "11. For Google Meet/Google Calendar: You can manage meetings and schedule video calls via Google Meet. Use 'googleMeetSchedule' to book a new meeting and generate a video link (always specify the title, start time, end time, and attendees if mentioned). Use 'googleMeetListMeetings' to list upcoming meetings, 'googleMeetUpdate' to reschedule or edit details, and 'googleMeetCancel' to cancel a meeting.",
+      "12. For Browser Control: Use 'browserControl' to automate browser tasks like opening tabs/websites, searching on Google/YouTube, clicking links/buttons, or running scripts. If the user asks to 'open youtube and open the first video', you should run two calls: first 'open_tab' with url='https://www.youtube.com', and then 'click_element' or 'execute_script' to select and click the first video link once the tab is loaded. Explain the steps clearly.",
       memoryContext
         ? `Use these saved user memories when relevant. Do not mention them unless it helps the answer.\n${memoryContext}`
         : "",
