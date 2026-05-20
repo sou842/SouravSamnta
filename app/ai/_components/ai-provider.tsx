@@ -80,6 +80,8 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
 
+  const [isInitialized, setIsInitialized] = useState(false);
+
   const init = useCallback(async () => {
     setIsSyncing(true);
     try {
@@ -92,31 +94,28 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
       
       setMemories(parsedMemories);
       setChats(parsedChats);
-
-      const q = searchParams.get("q");
-      if (q) {
-        const chat = parsedChats.find(c => c.id === q);
-        if (chat) {
-          setActiveChatId(q);
-        } else if (pathname === "/ai") {
-          // If in AI page and invalid Q, fallback to new chat or first chat
-          router.replace("/ai");
-        }
-      } else if (parsedChats.length > 0 && pathname === "/ai") {
-        // Optional: Select first chat if no Q and on /ai? 
-        // Or keep it as "New Chat" (empty state)
-      }
     } catch (error) {
       console.error("Failed to initialize AI data:", error);
       toast.error("Failed to sync with database.");
     } finally {
       setIsSyncing(false);
+      setIsInitialized(true);
     }
-  }, [searchParams, pathname, router]);
+  }, []);
 
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    const q = searchParams.get("q");
+    if (q) {
+      setActiveChatId(q);
+    } else if (pathname === "/ai" && !activeChatIdRef.current) {
+      setActiveChatId(createEmptyChat().id);
+    }
+  }, [searchParams, pathname, isInitialized]);
 
   const createNewChat = useCallback(() => {
     const next = createEmptyChat();
