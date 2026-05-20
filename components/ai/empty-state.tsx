@@ -13,6 +13,10 @@ import {
 
 import { type SendChatMessage } from "@/components/ai/types";
 import { ArrowUp } from "lucide-react";
+import { useAI } from "@/app/ai/_components/ai-provider";
+import { saveStoredChat, deriveChatTitle, type StoredChat } from "@/lib/chat-storage";
+import { nanoid } from "nanoid";
+import type { UIMessage } from "ai";
 
 interface EmptyStateProps {
   input: string;
@@ -23,9 +27,11 @@ interface EmptyStateProps {
 
 export function EmptyState({ input, setInput, sendMessage, selectedModel }: EmptyStateProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const { activeChatId, setChats, chats } = useAI();
 
   const handleSend = async () => {
     if (!input.trim()) return;
+
     await sendMessage(
       { text: input, files: [] },
       { body: { model: selectedModel } }
@@ -82,8 +88,8 @@ export function EmptyState({ input, setInput, sendMessage, selectedModel }: Empt
               onClick={handleSend}
               disabled={!input.trim()}
               className={`h-10 w-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${input.trim()
-                  ? "bg-white text-black hover:scale-105 active:scale-95"
-                  : "bg-white/10 text-white/20 cursor-not-allowed"
+                ? "bg-white text-black hover:scale-105 active:scale-95"
+                : "bg-white/10 text-white/20 cursor-not-allowed"
                 }`}
             >
               {input.trim() ? (

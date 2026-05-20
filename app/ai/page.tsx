@@ -20,9 +20,9 @@ import {
   saveStoredChat,
   type StoredChat,
 } from "@/lib/chat-storage";
-import { 
-  addMemory, 
-  inferMemoryCategory, 
+import {
+  addMemory,
+  inferMemoryCategory,
 } from "@/lib/memory-storage";
 import { nanoid } from "nanoid";
 import { useAI } from "./_components/ai-provider";
@@ -52,8 +52,9 @@ function AIPageContent() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  
+
   const activeChatIdRef = useRef("");
+  const lastLoadedQRef = useRef<string | null>(null);
   const persistedToolCallsRef = useRef(new Set<string>());
   const chatSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,7 +64,7 @@ function AIPageContent() {
   const lastAutoScrollTsRef = useRef(0);
   const perfSamplesRef = useRef({ streamUpdates: 0, longFrames: 0, lastTokenTs: 0 });
   const [renderMessages, setRenderMessages] = useState<UIMessage[]>([]);
-  
+
   // Gallery Side Panel states
   const [showGallerySidePanel, setShowGallerySidePanel] = useState(false);
   const [gallerySearchQuery, setGallerySearchQuery] = useState("");
@@ -111,31 +112,6 @@ function AIPageContent() {
       }
     },
     onFinish: async ({ message }) => {
-      const isNewChat = !chats.find(c => c.id === activeChatId);
-      if (isNewChat) {
-        const firstUserMessage = messages.find(m => m.role === 'user');
-        const assistantText = getMessageText(message);
-        const assistantMessage = { ...message, content: assistantText };
-        
-        const fallbackUserMessage = {
-          id: nanoid(),
-          role: "user" as const,
-          content: "New Chat",
-          parts: [{ type: "text", text: "New Chat" }],
-        } as unknown as UIMessage;
-        const newChatMessages = firstUserMessage 
-          ? [...messages, assistantMessage]
-          : [fallbackUserMessage, assistantMessage];
-
-        const newChat: StoredChat = {
-          id: activeChatId,
-          title: deriveChatTitle(newChatMessages),
-          messages: newChatMessages,
-          updatedAt: Date.now()
-        };
-        setChats(prev => [newChat, ...prev]);
-        router.replace(`/ai?q=${activeChatId}`);
-      }
 
       for (const { toolCallId, output } of getSaveMemoryToolOutputs(message)) {
         if (persistedToolCallsRef.current.has(toolCallId)) {
@@ -150,7 +126,7 @@ function AIPageContent() {
           source: "chat",
           tags: [...new Set([...output.memory.tags, "chat", "tool"])],
         });
-        
+
         if (newMemory) {
           setMemories(prev => [newMemory, ...prev]);
         }
@@ -162,7 +138,7 @@ function AIPageContent() {
       toast.error("Chat request failed. Please try again.");
     },
   });
-  
+
   const { messages, sendMessage, status, regenerate, setMessages } = chat;
 
   const isLoading = status === "submitted" || status === "streaming";
@@ -191,7 +167,7 @@ function AIPageContent() {
       const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
       if (lastAssistantMessage) {
         thought = getMessageText(lastAssistantMessage);
-        
+
         // Check if there are incomplete tool calls in it
         const hasActiveToolCall = lastAssistantMessage.parts?.some(
           part => part.type === "tool-call" && !messages.some(
@@ -251,8 +227,12 @@ function AIPageContent() {
     const q = searchParams.get("q");
     if (!q) {
       setMessages([]);
+      lastLoadedQRef.current = null;
       return;
     }
+
+    if (lastLoadedQRef.current === q) return;
+    lastLoadedQRef.current = q;
 
     const loadChat = async () => {
       try {
@@ -382,7 +362,7 @@ function AIPageContent() {
       parts: [{ type: "text", text: content }],
     } as UIMessage;
     const truncatedMessages = [...messages.slice(0, messageIndex), updatedMessage];
-    
+
     setMessages(truncatedMessages);
     setRenderMessages(truncatedMessages);
 
@@ -428,7 +408,24 @@ function AIPageContent() {
   ) => {
     const isNewChat = !chats.find(c => c.id === activeChatId);
     if (isNewChat && activeChatId) {
+      lastLoadedQRef.current = activeChatId;
+      const newStoredChat = {
+        id: activeChatId,
+        title: "New Chat",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: []
+      };
+      
+      setChats(prev => {
+        if (prev.some(c => c.id === activeChatId)) return prev;
+        return [newStoredChat as any, ...prev];
+      });
+      
       window.history.replaceState(null, '', `/ai?q=${activeChatId}`);
+      
+      // Persist the shell of the new chat immediately so it isn't lost if stream fails
+      saveStoredChat(newStoredChat as any).catch(e => console.error("Failed to save new chat", e));
     }
 
     const enabledMemories = memories
@@ -490,11 +487,13 @@ function AIPageContent() {
       });
   }, [openCompanion]);
 
+  console.log(renderMessages, "tara renderMessages", activeChatId)
+
   return (
     <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative w-full h-full">
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
-        <ChatHeader 
-          onOpenMobileSidebar={() => setMobileSidebarOpen(true)} 
+        <ChatHeader
+          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           isSyncing={isSyncing}
           extensionConnected={extensionConnected}
           openCompanion={handleOpenCompanion}

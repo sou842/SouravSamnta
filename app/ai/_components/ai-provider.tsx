@@ -55,7 +55,7 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
   const { sidebarWidth, startResize } = useSidebarResize();
-  
+
   const [selectedModel, setSelectedModelState] = useState<string>(mistralModels[0].id);
 
   useEffect(() => {
@@ -86,12 +86,12 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
     setIsSyncing(true);
     try {
       await Promise.all([syncChatsWithDatabase(), syncMemoriesWithDatabase()]);
-      
+
       const [parsedChats, parsedMemories] = await Promise.all([
         loadStoredChats(),
         loadStoredMemories()
       ]);
-      
+
       setMemories(parsedMemories);
       setChats(parsedChats);
     } catch (error) {
@@ -140,13 +140,13 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
       if (pathname === "/ai") router.replace("/ai");
       return;
     }
-    
+
     if (id === activeChatId) {
       const nextChat = filtered[0];
       setActiveChatId(nextChat.id);
       if (pathname === "/ai") router.replace(`/ai?q=${nextChat.id}`);
     }
-    
+
     setChats(filtered);
     toast.success("Chat deleted");
   }, [chats, activeChatId, pathname, router]);
