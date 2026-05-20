@@ -27,6 +27,7 @@ import {
 } from "@/components/ai-elements/reasoning";
 import { WeatherCard } from "@/components/ai/weather-card";
 import { BrowserCard } from "@/components/ai/browser-card";
+import { Shimmer } from "../ai-elements/shimmer";
 
 interface MessageListProps {
   messages: UIMessage[];
@@ -100,9 +101,9 @@ export function MessageList({
     : 0;
   const endIndex = isWindowed
     ? Math.min(
-        uniqueMessages.length,
-        Math.ceil((scrollTop + viewportHeight) / ITEM_ESTIMATE) + OVERSCAN
-      )
+      uniqueMessages.length,
+      Math.ceil((scrollTop + viewportHeight) / ITEM_ESTIMATE) + OVERSCAN
+    )
     : uniqueMessages.length;
 
   const visibleMessages = isWindowed
@@ -166,22 +167,10 @@ export function MessageList({
           );
         })
       )}
-      
+
       {isLoading && uniqueMessages[uniqueMessages.length - 1]?.role === 'user' && (
         <Message from="assistant" className="animate-pulse">
-          <div className="flex gap-6">
-            <div className="w-10 h-10 rounded-[1.25rem] bg-primary/5 border border-primary/10 flex items-center justify-center shrink-0 shadow-lg">
-              <Sparkles size={18} className="text-primary/40 animate-spin-slow" />
-            </div>
-            <div className="flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-[0.25em] mb-2 text-primary/20 ml-1">
-                Processing Cycle
-              </div>
-              <MessageContent className="italic text-white/30 text-sm font-light tracking-wide">
-                Neural pathways routing...
-              </MessageContent>
-            </div>
-          </div>
+          <Shimmer duration={1}>Thinking...</Shimmer>
         </Message>
       )}
     </>
@@ -217,13 +206,27 @@ const MessageRow = React.memo(function MessageRow({
   setEditingContent,
   browserCommandStates,
 }: MessageRowProps) {
-  const text = getMessageText(message);
+  let text = getMessageText(message);
+  if (message.role === "assistant" && !text.trim()) {
+    const toolInvocations = (message as any)?.toolInvocations;
+    const hasActive = toolInvocations?.some((ti: any) => ti.state === 'call');
+    if (hasActive) {
+      text = "Executing command...";
+    } else if (toolInvocations && toolInvocations.length > 0) {
+      const hasError = toolInvocations.some((ti: any) => ti.result && (ti.result.error || 'error' in ti.result));
+      if (hasError) {
+        text = "Command execution failed. Please check the details below.";
+      } else {
+        text = "Command executed successfully.";
+      }
+    }
+  }
   const messageAttachments = getMessageAttachments(message);
   const isEditing = editingId === message.id;
   const isStreamingAssistant = isLastStreaming && message.role === "assistant";
-  
+
   const weatherInvocations = (message as any)?.toolInvocations?.filter(
-    (ti:any) => ti.state === 'result' && ti.toolName === 'getWeather' && ti.result && !('error' in ti.result)
+    (ti: any) => ti.state === 'result' && ti.toolName === 'getWeather' && ti.result && !('error' in ti.result)
   );
 
   const browserInvocations = (message as any)?.toolInvocations?.filter(
@@ -291,7 +294,7 @@ const MessageRow = React.memo(function MessageRow({
                               {getToolLabel(ti.toolName, ti.state)}
                             </span>
                           </div>
-                          
+
                           {/* Tool Details (Args/Result) */}
                           <div className="text-[10px] opacity-40 ml-4 font-mono truncate max-w-md">
                             {ti.state === 'call' ? (
@@ -391,7 +394,7 @@ const MessageRow = React.memo(function MessageRow({
               const description = args.description || "";
 
               return (
-                <BrowserCard 
+                <BrowserCard
                   key={invocation.toolCallId}
                   action={action}
                   description={description}
@@ -402,7 +405,7 @@ const MessageRow = React.memo(function MessageRow({
               );
             })}
 
-            
+
             {!editingId && messageAttachments.length > 0 && (
               <Attachments className="mt-6 flex flex-wrap gap-3">
                 {messageAttachments.map((attachment, index) => (
@@ -419,7 +422,7 @@ const MessageRow = React.memo(function MessageRow({
               </Attachments>
             )}
           </MessageContent>
-          
+
           <MessageToolbar className={cn(
             "mt-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0",
             message.role === 'user' && "justify-end"
@@ -464,5 +467,8 @@ const MessageRow = React.memo(function MessageRow({
   if (prev.isLastStreaming !== next.isLastStreaming) return false;
   if (prev.editingId !== next.editingId) return false;
   if (prev.editingContent !== next.editingContent && prev.editingId === prev.message.id) return false;
+  if (prev.browserCommandStates !== next.browserCommandStates) return false;
+  if (prev.message.parts !== next.message.parts) return false;
+  if ((prev.message as any).toolInvocations !== (next.message as any).toolInvocations) return false;
   return getMessageText(prev.message) === getMessageText(next.message);
 });
