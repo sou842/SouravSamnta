@@ -19,7 +19,8 @@ import {
   Ellipsis,
   BookOpenCheck,
   Layers,
-  Calendar
+  Calendar,
+  Smartphone
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -163,6 +164,13 @@ export function Sidebar({
               icon={<Layers size={16} />}
               isCollapsed={isCollapsed}
               label="Integrations"
+            />
+            <SidebarNavItem
+              active={pathname === "/ai/integrations/whatsapp"}
+              href="/ai/integrations/whatsapp"
+              icon={<Smartphone size={16} />}
+              isCollapsed={isCollapsed}
+              label="WhatsApp"
             />
             <SidebarNavItem
               active={pathname?.startsWith("/ai/schedule")}

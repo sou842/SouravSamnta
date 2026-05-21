@@ -14,6 +14,8 @@ import ScheduleTask from '@/lib/models/ScheduleTask';
 import { getMessageText } from '@/lib/ai/message-utils';
 import { VAULT_GUIDELINES } from '@/lib/ai/vault-guidelines';
 import { cleanPhone, computeNextRunAt } from '@/lib/schedule';
+import { getCurrentUser } from '@/lib/server/current-user';
+import { whatsappSessionManager } from '@/lib/whatsapp/session-manager';
 
 async function getGoogleAccessToken() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -717,43 +719,23 @@ const tools = {
   }),
 
   whatsappSendMessage: tool({
-    description: "Send a WhatsApp message to a specific number using Green API. Use this when the user asks you to text or message someone on WhatsApp.",
+    description: "Send a WhatsApp message to a specific number using the linked device session. Use this when the user asks you to text or message someone on WhatsApp.",
     inputSchema: z.object({
       to: z.string().describe("The recipient's phone number with country code (e.g., '919903149299')"),
       message: z.string().describe("The content of the WhatsApp message."),
     }),
     execute: async ({ to, message }) => {
-      console.log(`WhatsApp tool called: to=${to}, message=${message}`);
       try {
-        const idInstance = process.env.GREEN_API_ID_INSTANCE;
-        const apiTokenInstance = process.env.GREEN_API_TOKEN_INSTANCE;
-
-        if (!idInstance || !apiTokenInstance) {
-          return { error: "Missing Green API credentials (GREEN_API_ID_INSTANCE or GREEN_API_TOKEN_INSTANCE)" };
-        }
-
-        // Clean number: remove '+', 'whatsapp:', and any spaces
+        const user = await getCurrentUser();
         const cleanNumber = to.replace(/[^0-9]/g, '');
-        const chatId = `${cleanNumber}@c.us`;
+        const chatJid = `${cleanNumber}@c.us`;
 
-        const res = await fetch(`https://api.green-api.com/waInstance${idInstance}/sendMessage/${apiTokenInstance}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            chatId,
-            message,
-          }),
+        const normalizedMessage = await whatsappSessionManager.sendMessage(user.id, {
+          chatJid,
+          text: message,
         });
 
-        if (!res.ok) {
-          const error = await res.json();
-          return { error: `Green API error: ${error.message || res.statusText}` };
-        }
-
-        const data = await res.json();
-        return { success: true, idMessage: data.idMessage };
+        return { success: true, idMessage: normalizedMessage.messageId };
       } catch (error: any) {
         return { error: error.message };
       }
@@ -1250,7 +1232,7 @@ export async function POST(req: Request) {
       "4. For date & time: Use 'getTime' to get the current date or time for any location. Default is India. If the user asks for the current time or date without specifying a city, call 'getTime' with no arguments. Be specific with city names (e.g., 'London, UK') to avoid ambiguity.",
       "5. For GitHub: You have access to the user's GitHub account via a Personal Access Token. Use 'githubGetUser' to see their profile, 'githubListRepos' to list projects, 'githubGetRepo' for details, 'githubReadFile' to analyze code, and 'githubListCommits' to see recent changes or commit history. If you need to search for something across repos, use 'githubSearchCode'. You can help the user manage their repositories, analyze their code, or explain project structures.",
       "6. For Gmail: You can access the user's emails. Use 'gmailListMessages' to see their inbox or search for emails, and 'gmailGetMessage' to read the full content of an email. You can help the user summarize threads, find specific info, or keep track of their correspondence.",
-      "7. For WhatsApp: You can send messages via Green API. Use 'whatsappSendMessage' to text the user or others from their personal account. Always verify the phone number format (country code + number, e.g., 919903149299). You can also manage contacts using 'saveContact' and 'listContacts'.",
+      "7. For WhatsApp: You can send messages via the linked device session. Use 'whatsappSendMessage' to text the user or others from their personal account. Always verify the phone number format (country code + number, e.g., 919903149299). If the user asks to message a specific person by name but doesn't provide a number, use 'listContacts' first to find their number. You can also manage contacts using 'saveContact'.",
       "8. For WhatsApp Contact Selection: If you see a tag like '@WhatsApp:Name (Phone)' at the start of a message, it is a RECIPIENT OVERRIDE. You MUST call 'whatsappSendMessage' using that phone number for the user's message. Do not mention or include this tag in your final response to the user.",
       "9. For Vault (Data Storage): The Vault stores spreadsheets (structured data), notes (unstructured data), and media galleries / albums. Use 'listVaultItems' to browse and 'getVaultItem' to read content. For creating/updating items, use 'getVaultNoteGuidelines' for notes or 'getVaultSheetGuidelines' for spreadsheets if you are unsure about the format. Always save spreadsheets, lists, notes, or media galleries / albums in the Vault when asked. To create a media gallery/album, call 'createVaultItem' with type='gallery' or type='album' and content=array of media objects (each having: id, filename, url, mediaType, size).",
       "10. For calling arbitrary APIs: Use 'callApi' when the user asks you to call, fetch, or request an external API or webhook. If they provide headers or a token (e.g. 'token: Bearer ...' or 'Authorization: ...'), make sure to pass them in the 'headers' object of the tool input. For token authentication, construct the appropriate 'Authorization' header. If they don't specify the HTTP method, default to 'GET'.",

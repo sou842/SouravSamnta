@@ -1,5 +1,9 @@
 import ScheduleTask from '@/lib/models/ScheduleTask';
 import ScheduleTaskRun from '@/lib/models/ScheduleTaskRun';
+import { whatsappSessionManager } from '@/lib/whatsapp/session-manager';
+
+const DEV_FALLBACK_USER_ID = process.env.WHATSAPP_DEV_USER_ID || process.env.DEMO_USER_ID || 'local-user';
+const normalize = (value: string) => value.trim().replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);
 
 export function cleanPhone(value: string) {
   return value.replace(/[^0-9]/g, '');
@@ -40,29 +44,15 @@ async function getWeatherMessage(city?: string) {
   return `Weather report for ${location}: ${current.temperature}°C, wind ${current.windspeed} km/h.`;
 }
 
+
+
 async function sendWhatsappMessage(to: string, message: string) {
-  const idInstance = process.env.GREEN_API_ID_INSTANCE;
-  const apiTokenInstance = process.env.GREEN_API_TOKEN_INSTANCE;
-
-  if (!idInstance || !apiTokenInstance) {
-    throw new Error('Missing Green API credentials (GREEN_API_ID_INSTANCE or GREEN_API_TOKEN_INSTANCE)');
-  }
-
   const cleanNumber = cleanPhone(to);
-  const chatId = `${cleanNumber}@c.us`;
+  const chatJid = `${cleanNumber}@c.us`;
+  const userId = normalize(DEV_FALLBACK_USER_ID);
 
-  const res = await fetch(`https://api.green-api.com/waInstance${idInstance}/sendMessage/${apiTokenInstance}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId, message }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Green API error: ${errText}`);
-  }
-
-  return res.json();
+  await whatsappSessionManager.sendMessage(userId, { chatJid, text: message });
+  return { success: true };
 }
 
 export async function executeScheduleTask(task: any) {
